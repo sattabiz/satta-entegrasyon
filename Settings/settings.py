@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -16,10 +15,11 @@ from PySide6.QtWidgets import (
 )
 
 from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
+from Common.path_helper import project_path
 
 
 class SettingsTab(QWidget):
-    SETTINGS_FILE = Path("settings/app_settings.json")
+    SETTINGS_FILE = project_path("Settings", "app_settings.json")
 
     def __init__(self):
         super().__init__()
@@ -180,7 +180,10 @@ class SettingsTab(QWidget):
         }
 
         self.SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        self.SETTINGS_FILE.write_text(json.dumps(settings_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.SETTINGS_FILE.write_text(
+            json.dumps(settings_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
         if show_message:
             QMessageBox.information(self, "Ayarlar", "Ayarlar kaydedildi.")

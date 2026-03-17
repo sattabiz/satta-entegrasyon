@@ -1,15 +1,16 @@
 
 
 import json
-from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 import requests
 
+from Common.path_helper import project_path
+
 
 class SattaInvoicePushConnector:
-    SETTINGS_FILE = Path("settings/app_settings.json")
-    SESSION_FILE = Path("settings/satta_session.json")
+    SETTINGS_FILE = project_path("Settings", "app_settings.json")
+    SESSION_FILE = project_path("Settings", "satta_session.json")
 
     def __init__(self):
         self.settings = self._load_settings()

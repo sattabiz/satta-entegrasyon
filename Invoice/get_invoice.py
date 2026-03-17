@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+from Common.path_helper import project_path
 
 
 InvoiceUiRow = Tuple[str, str, str, str, str, str, str, str]
 InvoiceDetailRow = Tuple[str, str, str, str, str, str]
 
+
+## TODO: Dinamik buton adları hazırlanacak 
 
 @dataclass
 class SattaInvoiceConfig:
@@ -17,8 +20,7 @@ class SattaInvoiceConfig:
     username: str = ""
     password: str = ""
     token: str = ""
-    token_storage_file: str = "settings/satta_session.json"
-
+    token_storage_file: str = "satta_session.json"
 
 class SattaInvoiceConnector:
     def __init__(self, config: SattaInvoiceConfig | None = None):
@@ -386,7 +388,7 @@ class SattaInvoiceConnector:
         return f"{base_url}/api/v1/login.json"
 
     def _session_file_path(self) -> Path:
-        return Path(self.config.token_storage_file)
+        return project_path("Settings", self.config.token_storage_file)
 
     def _read_session_file(self) -> Dict[str, Any]:
         session_path = self._session_file_path()

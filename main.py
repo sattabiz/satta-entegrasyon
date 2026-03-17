@@ -1,6 +1,5 @@
 import sys
-
-from pathlib import Path
+from Common.path_helper import project_path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPixmap
 from Settings.settings import SettingsTab
@@ -32,7 +31,7 @@ class MainWindow(QMainWindow):
 
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignCenter)
-        logo_path = Path(__file__).resolve().parent / "App_Icons" / "2.png"
+        logo_path = project_path("App_Icons", "2.png")
         logo_pixmap = QPixmap(str(logo_path))
         if not logo_pixmap.isNull():
             logo_label.setPixmap(

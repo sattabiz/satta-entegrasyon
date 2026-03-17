@@ -1,6 +1,5 @@
 import json
-from pathlib import Path
-
+from Common.path_helper import project_path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -19,8 +18,7 @@ from PySide6.QtWidgets import (
 from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
 from Invoice.push_invoice import SattaInvoicePushConnector
 
-SETTINGS_FILE = Path("settings/app_settings.json")
-
+SETTINGS_FILE = project_path("Settings", "app_settings.json")
 
 class InvoiceTransferTab(QWidget):
     def __init__(self):
