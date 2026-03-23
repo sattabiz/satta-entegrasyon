@@ -18,9 +18,12 @@ from PySide6.QtWidgets import (
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, runtime_config: dict | None = None):
         super().__init__()
-        self.setWindowTitle("Satta Entegrasyon")
+        self.runtime_config = runtime_config or {}
+        active_connector = str(self.runtime_config.get("active_connector", "")).strip()
+        connector_label = active_connector.capitalize() if active_connector else "Bağlayıcı Seçilmedi"
+        self.setWindowTitle(f"Satta Entegrasyon - {connector_label}")
         self.resize(1000, 700)
 
         self.tabs = QTabWidget()
@@ -39,7 +42,7 @@ class MainWindow(QMainWindow):
                 logo_pixmap.scaledToWidth(220, Qt.SmoothTransformation)
             )
 
-        home_text_label = QLabel("Satta Entegrasyon")
+        home_text_label = QLabel(f"Satta Entegrasyon - {connector_label}")
         home_text_font = QFont()
         home_text_font.setPointSize(22)
         home_text_font.setBold(True)
@@ -63,51 +66,92 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
 
 
+def deep_merge_defaults(default_value, existing_value):
+    if isinstance(default_value, dict):
+        existing_dict = existing_value if isinstance(existing_value, dict) else {}
+        merged = {}
+        for key, default_item in default_value.items():
+            merged[key] = deep_merge_defaults(default_item, existing_dict.get(key))
+        for key, value in existing_dict.items():
+            if key not in merged:
+                merged[key] = value
+        return merged
+
+    if existing_value is None:
+        return default_value
+
+    return existing_value
+
+
+DEFAULT_RUNTIME_FILES = {
+    "app_settings.json": {
+        "satta": {
+            "base_url": "",
+            "username": "",
+            "password": "",
+            "token": "",
+        },
+        "logo": {
+            "server": "",
+            "database": "",
+            "username": "",
+            "password": "",
+            "firm_no": 1,
+            "period_no": 1,
+        },
+    },
+    "satta_session.json": {
+        "token": "",
+        "refresh_token": "",
+        "expires_at": "",
+    },
+    "runtime_config.json": {
+        "active_connector": "",
+        "installed_connectors": [],
+    },
+}
+
+
+def load_runtime_config() -> dict:
+    runtime_config_file = user_data_path("runtime_config.json")
+    if not runtime_config_file.exists():
+        return dict(DEFAULT_RUNTIME_FILES["runtime_config.json"])
+
+    try:
+        runtime_config = json.loads(runtime_config_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return dict(DEFAULT_RUNTIME_FILES["runtime_config.json"])
+
+    return deep_merge_defaults(DEFAULT_RUNTIME_FILES["runtime_config.json"], runtime_config)
+
+
 def ensure_runtime_files() -> None:
     user_data_dir = get_user_data_dir()
     ensure_directory(user_data_dir)
 
-    default_files = {
-        "app_settings.json": {
-            "satta": {
-                "base_url": "",
-                "username": "",
-                "password": "",
-                "token": "",
-            },
-            "logo": {
-                "server": "",
-                "database": "",
-                "username": "",
-                "password": "",
-                "firm_no": 1,
-                "period_no": 1,
-            },
-        },
-        "satta_session.json": {
-            "token": "",
-            "refresh_token": "",
-            "expires_at": "",
-        },
-        "runtime_config.json": {
-            "active_connector": "",
-            "installed_connectors": [],
-        },
-    }
-
-    for filename, content in default_files.items():
+    for filename, default_content in DEFAULT_RUNTIME_FILES.items():
         file_path = user_data_path(filename)
-        if not file_path.exists():
-            file_path.write_text(
-                json.dumps(content, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+
+        if file_path.exists():
+            try:
+                existing_content = json.loads(file_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                existing_content = None
+        else:
+            existing_content = None
+
+        final_content = deep_merge_defaults(default_content, existing_content)
+        file_path.write_text(
+            json.dumps(final_content, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 def main() -> None:
     ensure_runtime_files()
+    runtime_config = load_runtime_config()
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(runtime_config=runtime_config)
     window.show()
     sys.exit(app.exec())
 

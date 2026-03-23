@@ -20,13 +20,25 @@ from Invoice.push_invoice import SattaInvoicePushConnector
 
 SETTINGS_FILE = user_data_path("app_settings.json")
 
+RUNTIME_CONFIG_FILE = user_data_path("runtime_config.json")
+
+
+CONNECTOR_DISPLAY_NAMES = {
+    "logo": "Logo",
+    "sap": "SAP",
+    "canias": "Canias",
+}
+
 class InvoiceTransferTab(QWidget):
     def __init__(self):
         super().__init__()
 
         root_layout = QVBoxLayout(self)
 
-        title_label = QLabel("Fatura Aktarımı")
+        self.active_connector = self.load_active_connector()
+        connector_display_name = self.get_connector_display_name()
+
+        title_label = QLabel(f"Fatura Aktarımı - {connector_display_name}")
         root_layout.addWidget(title_label)
 
         self.search_input = QLineEdit()
@@ -46,7 +58,7 @@ class InvoiceTransferTab(QWidget):
 
         button_layout = QHBoxLayout()
         self.load_button = QPushButton("Faturaları Satta'dan Al")
-        self.transfer_button = QPushButton("Faturaları Logo'ya Aktar")
+        self.transfer_button = QPushButton(f"Faturaları {connector_display_name}'a Aktar")
         self.edit_invoice_table_checkbox = QCheckBox("Fatura tablosunu düzenlenebilir yap")
         self.edit_invoice_table_checkbox.toggled.connect(self.toggle_invoice_table_edit_mode)
         self.load_button.clicked.connect(self.load_invoices)
@@ -113,6 +125,20 @@ class InvoiceTransferTab(QWidget):
         self.search_input.textChanged.connect(self.filter_invoices)
         self.invoice_table.itemSelectionChanged.connect(self.load_selected_invoice_details)
 
+
+    def load_active_connector(self):
+        if not RUNTIME_CONFIG_FILE.exists():
+            return ""
+
+        try:
+            runtime_config = json.loads(RUNTIME_CONFIG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return ""
+
+        return str(runtime_config.get("active_connector", "")).strip().lower()
+
+    def get_connector_display_name(self):
+        return CONNECTOR_DISPLAY_NAMES.get(self.active_connector, "Hedef Sistem")
 
     def run_search_with_feedback(self):
         self.filter_invoices(show_no_results_message=True)
@@ -369,10 +395,12 @@ class InvoiceTransferTab(QWidget):
             QMessageBox.critical(self, "Aktarım Hatası", f"Seçili faturalar Satta üzerinde işaretlenemedi:\n{exc}")
             return
 
+        connector_display_name = self.get_connector_display_name()
+
         QMessageBox.information(
             self,
             "Aktarım Tamamlandı",
-            f"Seçili {len(selected_invoice_ids)} fatura Satta üzerinde muhasebeye aktarıldı olarak işaretlendi.",
+            f"Seçili {len(selected_invoice_ids)} fatura {connector_display_name} için Satta üzerinde muhasebeye aktarıldı olarak işaretlendi.",
         )
 
         self.remove_transferred_invoices_from_ui(selected_invoice_nos)
