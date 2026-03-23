@@ -1,10 +1,52 @@
-.venv/
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Build artifacts
 build/
+dist/
+*.egg-info/
+
+# PyInstaller
+*.manifest
+*.spec.bak
+
+# Installer outputs
+installer/Output/
+Output/
+
+# IDE / Editor
 .vscode/
 .idea/
-Settings/app_settings.json
-Settings/satta_session.json
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
 tempCodeRunnerFile.py
 
+# Test / cache
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
+# Local runtime / user-specific config files
+Settings/app_settings.json
+Settings/satta_session.json
+Settings/runtime_config.json
+
+# Optional local overrides
+*.local.json

@@ -2,7 +2,7 @@
 AppName=Satta Entegrasyon
 AppVersion=0.1.0
 AppPublisher=Satta
-DefaultDirName={autopf}\Satta\EntegrasyonLive
+DefaultDirName={autopf}\Satta\SattaEntegrasyon
 DefaultGroupName=Satta Entegrasyon
 OutputDir=Output
 OutputBaseFilename=SattaEntegrasyon-Setup
@@ -29,7 +29,7 @@ Name: "connector\sap"; Description: "SAP Connector"; Types: custom; Flags: exclu
 Name: "connector\canias"; Description: "Canias Connector"; Types: custom; Flags: exclusive
 
 [Files]
-Source: "..\dist\EntegrasyonLive\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: main
+Source: "..\dist\SattaEntegrasyon\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: main
 
 [Icons]
 Name: "{group}\Satta Entegrasyon"; Filename: "{app}\SattaEntegrasyon.exe"
