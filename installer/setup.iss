@@ -1,16 +1,16 @@
 [Setup]
-AppName=Satta Entegrasyon Live
+AppName=Satta Entegrasyon
 AppVersion=0.1.0
 AppPublisher=Satta
 DefaultDirName={autopf}\Satta\EntegrasyonLive
-DefaultGroupName=Satta Entegrasyon Live
+DefaultGroupName=Satta Entegrasyon
 OutputDir=Output
-OutputBaseFilename=SattaEntegrasyonLive-Setup
+OutputBaseFilename=SattaEntegrasyon-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-UninstallDisplayIcon={app}\EntegrasyonLive.exe
+UninstallDisplayIcon={app}\SattaEntegrasyon.exe
 
 [Languages]
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
@@ -19,8 +19,8 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "desktopicon"; Description: "Masaüstü kısayolu oluştur"; GroupDescription: "Ek görevler:"; Flags: unchecked
 
 [Types]
-Name: "full"; Description: "Tam kurulum"
-Name: "custom"; Description: "Özel kurulum"; Flags: iscustom
+Name: "full"; Description: "Ana Kurulum"
+Name: "custom"; Description: "Özel Kurulum"; Flags: iscustom
 
 [Components]
 Name: "main"; Description: "Ana uygulama dosyaları"; Types: full custom; Flags: fixed
@@ -32,11 +32,11 @@ Name: "connector\canias"; Description: "Canias Connector"; Types: custom; Flags:
 Source: "..\dist\EntegrasyonLive\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: main
 
 [Icons]
-Name: "{group}\Satta Entegrasyon Live"; Filename: "{app}\EntegrasyonLive.exe"
-Name: "{autodesktop}\Satta Entegrasyon Live"; Filename: "{app}\EntegrasyonLive.exe"; Tasks: desktopicon
+Name: "{group}\Satta Entegrasyon"; Filename: "{app}\SattaEntegrasyon.exe"
+Name: "{autodesktop}\Satta Entegrasyon"; Filename: "{app}\SattaEntegrasyon.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\EntegrasyonLive.exe"; Description: "Satta Entegrasyon Live uygulamasını başlat"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\SattaEntegrasyon.exe"; Description: "Satta Entegrasyon uygulamasını başlat"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function GetSelectedConnector(): String;
@@ -60,7 +60,7 @@ var
 begin
   SelectedConnector := GetSelectedConnector();
 
-  UserDataDir := ExpandConstant('{localappdata}\Satta\EntegrasyonLive');
+  UserDataDir := ExpandConstant('{localappdata}\Satta\SattaEntegrasyon');
   if not DirExists(UserDataDir) then
     ForceDirectories(UserDataDir);
 

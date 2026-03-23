@@ -23,7 +23,8 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='EntegrasyonLive',
+    name='SattaEntegrasyon',
+    icon='App_Icons/exeIcon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -42,5 +43,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='EntegrasyonLive',
+    name='SattaEntegrasyon',
 )

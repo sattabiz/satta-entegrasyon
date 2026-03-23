@@ -4,7 +4,7 @@ import sys
 
 
 APP_VENDOR = "Satta"
-APP_NAME = "EntegrasyonLive"
+APP_NAME = "SattaEntegrasyon"
 
 
 def get_base_dir() -> Path:
