@@ -15,11 +15,11 @@ from PySide6.QtWidgets import (
 )
 
 from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
-from Common.path_helper import project_path
+from Common.path_helper import ensure_parent_directory, user_data_path
 
 
 class SettingsTab(QWidget):
-    SETTINGS_FILE = project_path("Settings", "app_settings.json")
+    SETTINGS_FILE = user_data_path("app_settings.json")
 
     def __init__(self):
         super().__init__()
@@ -159,7 +159,11 @@ class SettingsTab(QWidget):
             QMessageBox.warning(self, "Eksik Bilgi", "Logo SQL Server ve Database alanlarını doldur.")
             return
 
-        QMessageBox.information(self, "Logo Bağlantısı", "Logo bağlantı testi için bilgiler hazır. SQL test akışı daha sonra eklenecek.")
+        QMessageBox.information(
+            self,
+            "Logo Bağlantısı",
+            "Logo bağlantı testi için bilgiler hazır. SQL test akışı daha sonra eklenecek.",
+        )
 
     def save_settings(self, show_message: bool = True) -> None:
         settings_data = {
@@ -179,7 +183,7 @@ class SettingsTab(QWidget):
             },
         }
 
-        self.SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ensure_parent_directory(self.SETTINGS_FILE)
         self.SETTINGS_FILE.write_text(
             json.dumps(settings_data, ensure_ascii=False, indent=2),
             encoding="utf-8",

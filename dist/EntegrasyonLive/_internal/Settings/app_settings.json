@@ -1,0 +1,16 @@
+{
+  "satta": {
+    "base_url": "https://test.satta.biz",
+    "username": "burakilginnn+anil_musteri@gmail.com",
+    "password": "deneme123",
+    "token": "eyJhbGciOiJIUzI1NiJ9.eyJqdGkiOiI1ODdhMjJjZS0xMWIwLTQxZWQtYWM0NS00ZjU2OWYzYWRiZGYiLCJzdWIiOiIyOTEiLCJzY3AiOiJhcGlfdXNlciIsImF1ZCI6bnVsbCwiaWF0IjoxNzc0MjExNzQ3LCJleHAiOjE3NzQ0NzA5NDd9.T_u3l0UsGnZHhJeHDYtfnwKb9ocpWHKrAOmGyIWiaJI"
+  },
+  "logo": {
+    "server": "",
+    "database": "",
+    "username": "",
+    "password": "",
+    "firm_no": 1,
+    "period_no": 1
+  }
+}
