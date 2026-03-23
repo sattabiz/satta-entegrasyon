@@ -3,7 +3,7 @@ from typing import Any, Dict, List, TypedDict
 
 import requests
 
-from Common.path_helper import project_path
+from Common.path_helper import user_data_path
 
 
 class CostCenterOption(TypedDict):
@@ -12,8 +12,8 @@ class CostCenterOption(TypedDict):
 
 
 class SattaCostCenterConnector:
-    SETTINGS_FILE = project_path("Settings", "app_settings.json")
-    SESSION_FILE = project_path("Settings", "satta_session.json")
+    SETTINGS_FILE = user_data_path("app_settings.json")
+    SESSION_FILE = user_data_path("satta_session.json")
 
     def __init__(self):
         self.settings = self._load_settings()

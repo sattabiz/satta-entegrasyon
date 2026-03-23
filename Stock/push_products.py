@@ -1,20 +1,18 @@
-
-
 import json
 from typing import Any, Dict, Iterable, List
 
 import requests
 
-from Common.path_helper import project_path
+from Common.path_helper import user_data_path
 
 
 class SattaProductPushConnector:
-    SETTINGS_FILE = project_path("Settings", "app_settings.json")
-    SESSION_FILE = project_path("Settings", "satta_session.json")
+    SETTINGS_FILE = user_data_path("app_settings.json")
+    SESSION_FILE = user_data_path("satta_session.json")
 
     def __init__(self):
         self.settings = self._load_settings()
-        self.base_url = self._safe_text(self.settings.get("base_url"), "https://test.satta.biz")
+        self.base_url = self._safe_text(self.settings.get("base_url"))
         self.username = self._safe_text(self.settings.get("username"))
         self.token = self._resolve_token()
 
@@ -59,6 +57,9 @@ class SattaProductPushConnector:
     def _post_products(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         if not self.token:
             raise RuntimeError("Satta token bulunamadı. Önce ayarlardan giriş yapıp token al.")
+
+        if not self.base_url:
+            raise RuntimeError("Satta base URL bulunamadı. Ayarlar ekranından Satta bağlantı adresini kaydet.")
 
         url = self._build_push_url()
         headers = self._build_headers(self.token)

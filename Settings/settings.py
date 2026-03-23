@@ -183,11 +183,15 @@ class SettingsTab(QWidget):
             },
         }
 
-        ensure_parent_directory(self.SETTINGS_FILE)
-        self.SETTINGS_FILE.write_text(
-            json.dumps(settings_data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        try:
+            ensure_parent_directory(self.SETTINGS_FILE)
+            self.SETTINGS_FILE.write_text(
+                json.dumps(settings_data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            QMessageBox.critical(self, "Kayıt Hatası", f"Ayarlar kaydedilemedi:\n{exc}")
+            return
 
         if show_message:
             QMessageBox.information(self, "Ayarlar", "Ayarlar kaydedildi.")

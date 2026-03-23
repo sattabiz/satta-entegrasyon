@@ -1,5 +1,5 @@
 import json
-from Common.path_helper import project_path
+from Common.path_helper import user_data_path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
 from Invoice.push_invoice import SattaInvoicePushConnector
 
-SETTINGS_FILE = project_path("Settings", "app_settings.json")
+SETTINGS_FILE = user_data_path("app_settings.json")
 
 class InvoiceTransferTab(QWidget):
     def __init__(self):
@@ -108,11 +108,14 @@ class InvoiceTransferTab(QWidget):
         self.all_invoices = []
         self.invoice_details = {}
         self.invoice_id_map = {}
-        self.search_button.clicked.connect(self.filter_invoices)
-        self.search_input.returnPressed.connect(self.filter_invoices)
+        self.search_button.clicked.connect(self.run_search_with_feedback)
+        self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.search_input.textChanged.connect(self.filter_invoices)
         self.invoice_table.itemSelectionChanged.connect(self.load_selected_invoice_details)
 
+
+    def run_search_with_feedback(self):
+        self.filter_invoices(show_no_results_message=True)
 
     def fetch_invoices(self):
         satta_settings = self.load_satta_settings()
@@ -249,7 +252,7 @@ class InvoiceTransferTab(QWidget):
             self.invoice_table.selectRow(0)
             self.load_selected_invoice_details()
 
-    def filter_invoices(self):
+    def filter_invoices(self, *_args, show_no_results_message=False):
         search_text = self.search_input.text().strip().lower()
 
         if not search_text:
@@ -281,7 +284,7 @@ class InvoiceTransferTab(QWidget):
             self.detail_table.setRowCount(0)
             self.detail_title_label.setText("Seçili fatura kalemleri")
 
-        if not filtered_rows:
+        if not filtered_rows and show_no_results_message:
             QMessageBox.information(self, "Arama Sonucu", "Aramaya uygun fatura bulunamadı.")
 
     def get_selected_invoice_ids(self):

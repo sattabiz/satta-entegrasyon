@@ -87,10 +87,13 @@ class SupplierSendTab(QWidget):
         root_layout.addLayout(status_info_layout)
 
         self.all_suppliers = []
-        self.search_button.clicked.connect(self.filter_suppliers)
-        self.search_input.returnPressed.connect(self.filter_suppliers)
+        self.search_button.clicked.connect(self.run_search_with_feedback)
+        self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.search_input.textChanged.connect(self.filter_suppliers)
         self.load_suppliers()
+
+    def run_search_with_feedback(self):
+        self.filter_suppliers(show_no_results_message=True)
 
     def fetch_suppliers(self):
         connector = LogoConnector(
@@ -139,7 +142,7 @@ class SupplierSendTab(QWidget):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.supplier_table.setItem(row_index, col_index, item)
 
-    def filter_suppliers(self):
+    def filter_suppliers(self, *_args, show_no_results_message=False):
         search_text = self.search_input.text().strip().lower()
 
         if not search_text:
@@ -162,7 +165,7 @@ class SupplierSendTab(QWidget):
 
         if self.supplier_table.rowCount() > 0:
             self.supplier_table.selectRow(0)
-        elif search_text:
+        elif search_text and show_no_results_message:
             QMessageBox.information(self, "Arama Sonucu", "Aramaya uygun tedarikçi bulunamadı.")
 
     def get_selected_suppliers(self):
@@ -248,6 +251,7 @@ class SupplierSendTab(QWidget):
             "Aktarım Tamamlandı",
             f"Seçili {len(selected_suppliers)} tedarikçi Satta'ya gönderildi.",
         )
+
     def update_selected_count(self):
         selected_count = 0
         for row in range(self.supplier_table.rowCount()):

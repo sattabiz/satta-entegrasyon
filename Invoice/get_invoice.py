@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from Common.path_helper import project_path
+from Common.path_helper import user_data_path
 
 
 InvoiceUiRow = Tuple[str, str, str, str, str, str, str, str]
@@ -388,7 +388,7 @@ class SattaInvoiceConnector:
         return f"{base_url}/api/v1/login.json"
 
     def _session_file_path(self) -> Path:
-        return project_path("Settings", self.config.token_storage_file)
+        return user_data_path(self.config.token_storage_file)
 
     def _read_session_file(self) -> Dict[str, Any]:
         session_path = self._session_file_path()

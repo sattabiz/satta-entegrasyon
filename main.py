@@ -1,5 +1,6 @@
+import json
 import sys
-from Common.path_helper import project_path
+from Common.path_helper import project_path, ensure_directory, get_user_data_dir, user_data_path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPixmap
 from Settings.settings import SettingsTab
@@ -53,7 +54,7 @@ class MainWindow(QMainWindow):
         self.invoice_transfer_tab = InvoiceTransferTab()
         self.stock_tab = StockTab()
 
-        self.tabs.addTab(home_widget, "Ana Sayfa"),
+        self.tabs.addTab(home_widget, "Ana Sayfa")
         self.tabs.addTab(self.invoice_transfer_tab, "Fatura Aktarımı")
         self.tabs.addTab(self.stock_tab, "Ürünler")
         self.tabs.addTab(self.supplier_send_tab, "Tedarikçi Gönderim")
@@ -62,7 +63,49 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
 
 
+def ensure_runtime_files() -> None:
+    user_data_dir = get_user_data_dir()
+    ensure_directory(user_data_dir)
+
+    default_files = {
+        "app_settings.json": {
+            "satta": {
+                "base_url": "",
+                "username": "",
+                "password": "",
+                "token": "",
+            },
+            "logo": {
+                "server": "",
+                "database": "",
+                "username": "",
+                "password": "",
+                "firm_no": 1,
+                "period_no": 1,
+            },
+        },
+        "satta_session.json": {
+            "token": "",
+            "refresh_token": "",
+            "expires_at": "",
+        },
+        "runtime_config.json": {
+            "active_connector": "",
+            "installed_connectors": [],
+        },
+    }
+
+    for filename, content in default_files.items():
+        file_path = user_data_path(filename)
+        if not file_path.exists():
+            file_path.write_text(
+                json.dumps(content, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+
 def main() -> None:
+    ensure_runtime_files()
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

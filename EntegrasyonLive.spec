@@ -1,13 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+
 a = Analysis(
     ['main.py'],
     pathex=[SPECPATH],
     binaries=[],
     datas=[
-        ('Settings/app_settings.json', 'Settings'),
-        ('Settings/satta_session.json', 'Settings'),
-        ('Settings/runtime_config.json', 'Settings'),
         ('App_Icons/2.png', 'App_Icons'),
     ],
     hiddenimports=[],
