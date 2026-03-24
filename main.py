@@ -3,7 +3,7 @@ import sys
 from Common.path_helper import project_path, ensure_directory, get_user_data_dir, user_data_path
 from versiyon import APP_DISPLAY_NAME, APP_VERSION
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont, QPixmap, QIcon
 from Settings.settings import SettingsTab
 from Supplier.supplier import SupplierSendTab
 from Invoice.invoice import InvoiceTransferTab
@@ -25,6 +25,9 @@ class MainWindow(QMainWindow):
         active_connector = str(self.runtime_config.get("active_connector", "")).strip()
         connector_label = active_connector.capitalize() if active_connector else "Bağlayıcı Seçilmedi"
         self.setWindowTitle(f"{APP_DISPLAY_NAME} - {connector_label}")
+        window_icon_path = project_path("App_Icons", "exeIcon.ico")
+        if window_icon_path.exists():
+            self.setWindowIcon(QIcon(str(window_icon_path)))
         self.resize(1000, 700)
 
         self.tabs = QTabWidget()
