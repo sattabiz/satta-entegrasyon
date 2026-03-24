@@ -1,4 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
+
+import sys
+sys.path.insert(0, SPECPATH)
+
 from versiyon import APP_NAME
 
 
