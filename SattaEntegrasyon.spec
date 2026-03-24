@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+from versiyon import APP_NAME
 
 
 a = Analysis(
@@ -23,7 +24,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='SattaEntegrasyon',
+    name=APP_NAME,
     icon='App_Icons/exeIcon.ico',
     debug=False,
     bootloader_ignore_signals=False,
@@ -43,5 +44,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='SattaEntegrasyon',
+    name=APP_NAME,
 )

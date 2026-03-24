@@ -1,6 +1,7 @@
 import json
 import sys
 from Common.path_helper import project_path, ensure_directory, get_user_data_dir, user_data_path
+from versiyon import APP_DISPLAY_NAME, APP_VERSION
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPixmap
 from Settings.settings import SettingsTab
@@ -23,7 +24,7 @@ class MainWindow(QMainWindow):
         self.runtime_config = runtime_config or {}
         active_connector = str(self.runtime_config.get("active_connector", "")).strip()
         connector_label = active_connector.capitalize() if active_connector else "Bağlayıcı Seçilmedi"
-        self.setWindowTitle(f"Satta Entegrasyon - {connector_label}")
+        self.setWindowTitle(f"{APP_DISPLAY_NAME} v{APP_VERSION} - {connector_label}")
         self.resize(1000, 700)
 
         self.tabs = QTabWidget()
@@ -42,7 +43,7 @@ class MainWindow(QMainWindow):
                 logo_pixmap.scaledToWidth(220, Qt.SmoothTransformation)
             )
 
-        home_text_label = QLabel(f"Satta Entegrasyon - {connector_label}")
+        home_text_label = QLabel(f"{APP_DISPLAY_NAME} v{APP_VERSION} - {connector_label}")
         home_text_font = QFont()
         home_text_font.setPointSize(22)
         home_text_font.setBold(True)

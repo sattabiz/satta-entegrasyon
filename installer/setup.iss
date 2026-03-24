@@ -1,16 +1,23 @@
+#define MyAppName "Satta Entegrasyon"
+#define MyAppExeName "SattaEntegrasyon.exe"
+#define MyAppVersion "0.1.0"
+#define MyAppPublisher "Satta"
+#define MyAppDirName "SattaEntegrasyon"
+#define MyOutputBaseFilename "SattaEntegrasyon-Setup"
+
 [Setup]
-AppName=Satta Entegrasyon
-AppVersion=0.1.0
-AppPublisher=Satta
-DefaultDirName={autopf}\Satta\SattaEntegrasyon
-DefaultGroupName=Satta Entegrasyon
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+DefaultDirName={autopf}\Satta\{#MyAppDirName}
+DefaultGroupName={#MyAppName}
 OutputDir=Output
-OutputBaseFilename=SattaEntegrasyon-Setup
+OutputBaseFilename={#MyOutputBaseFilename}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-UninstallDisplayIcon={app}\SattaEntegrasyon.exe
+UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
@@ -32,11 +39,11 @@ Name: "connector\canias"; Description: "Canias Connector"; Types: custom; Flags:
 Source: "..\dist\SattaEntegrasyon\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: main
 
 [Icons]
-Name: "{group}\Satta Entegrasyon"; Filename: "{app}\SattaEntegrasyon.exe"
-Name: "{autodesktop}\Satta Entegrasyon"; Filename: "{app}\SattaEntegrasyon.exe"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\SattaEntegrasyon.exe"; Description: "Satta Entegrasyon uygulamasını başlat"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{#MyAppName} uygulamasını başlat"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function GetSelectedConnector(): String;
@@ -60,7 +67,7 @@ var
 begin
   SelectedConnector := GetSelectedConnector();
 
-  UserDataDir := ExpandConstant('{localappdata}\Satta\SattaEntegrasyon');
+  UserDataDir := ExpandConstant('{localappdata}\Satta\{#MyAppDirName}');
   if not DirExists(UserDataDir) then
     ForceDirectories(UserDataDir);
 
