@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
                 logo_pixmap.scaledToWidth(220, Qt.SmoothTransformation)
             )
 
-        home_text_label = QLabel(f"{APP_DISPLAY_NAME} v{APP_VERSION} - {connector_label}")
+        home_text_label = QLabel(f"{APP_DISPLAY_NAME} - {connector_label}")
         home_text_font = QFont()
         home_text_font.setPointSize(22)
         home_text_font.setBold(True)
