@@ -17,13 +17,26 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+CONNECTOR_DISPLAY_NAMES = {
+    "logo": "Logo",
+    "sap": "SAP",
+    "canias": "Canias",
+}
+
+
+def get_connector_display_name(connector_name: str) -> str:
+    normalized_name = str(connector_name).strip().lower()
+    if not normalized_name:
+        return "Bağlayıcı Seçilmedi"
+    return CONNECTOR_DISPLAY_NAMES.get(normalized_name, normalized_name.capitalize())
+
 
 class MainWindow(QMainWindow):
     def __init__(self, runtime_config: dict | None = None):
         super().__init__()
         self.runtime_config = runtime_config or {}
         active_connector = str(self.runtime_config.get("active_connector", "")).strip()
-        connector_label = active_connector.capitalize() if active_connector else "Bağlayıcı Seçilmedi"
+        connector_label = get_connector_display_name(active_connector)
         self.setWindowTitle(f"{APP_DISPLAY_NAME} v{APP_VERSION} - {connector_label}")
         window_icon_path = project_path("App_Icons", "exeIcon.ico")
         if window_icon_path.exists():
@@ -46,7 +59,7 @@ class MainWindow(QMainWindow):
                 logo_pixmap.scaledToWidth(220, Qt.SmoothTransformation)
             )
 
-        home_text_label = QLabel(f"{APP_DISPLAY_NAME} - {connector_label}")
+        home_text_label = QLabel(f"{APP_DISPLAY_NAME} v{APP_VERSION} - {connector_label}")
         home_text_font = QFont()
         home_text_font.setPointSize(22)
         home_text_font.setBold(True)
@@ -102,6 +115,20 @@ DEFAULT_RUNTIME_FILES = {
             "password": "",
             "firm_no": 1,
             "period_no": 1,
+        },
+        "sap": {
+            "host": "",
+            "system_number": "",
+            "client": "",
+            "username": "",
+            "password": "",
+            "language": "TR",
+        },
+        "canias": {
+            "host": "",
+            "tenant": "",
+            "username": "",
+            "password": "",
         },
     },
     "satta_session.json": {
