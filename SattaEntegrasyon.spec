@@ -12,6 +12,8 @@ a = Analysis(
     binaries=[],
     datas=[
         ('App_Icons/2.png', 'App_Icons'),
+        ('App_Icons/exeIcon.ico', 'App_Icons'),
+        ('Templates/supplierTemplate.xlsx', 'Templates'),
     ],
     hiddenimports=[],
     hookspath=[],
