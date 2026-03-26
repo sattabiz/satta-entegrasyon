@@ -1,7 +1,10 @@
+import shutil
+from openpyxl import load_workbook
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QFileDialog,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -15,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 from Connectors.logo_connector import LogoConnectionConfig, LogoConnector
 from Supplier.push_suppliers import SattaSupplierPushConnector
+from Common.path_helper import project_path
 
 
 class SupplierSendTab(QWidget):
@@ -24,7 +28,27 @@ class SupplierSendTab(QWidget):
         root_layout = QVBoxLayout(self)
 
         title_label = QLabel("Tedarikçi Gönderim Ekranı")
-        root_layout.addWidget(title_label)
+
+        title_row = QHBoxLayout()
+        title_row.addWidget(title_label)
+        title_row.addStretch()
+
+        self.load_button = QPushButton("Tedarikçileri Al")
+        self.template_button = QPushButton("Tedarikçi Şablonunu İndir")
+        self.import_template_button = QPushButton("Şablondan Tedarikçi Yükle")
+        self.send_button = QPushButton("Seçili Tedarikçileri Satta'ya Gönder")
+        self.edit_table_checkbox = QCheckBox("Tabloyu düzenlenebilir yap")
+        self.edit_table_checkbox.toggled.connect(self.toggle_table_edit_mode)
+        self.load_button.clicked.connect(self.load_suppliers)
+        self.template_button.clicked.connect(self.download_supplier_template)
+        self.import_template_button.clicked.connect(self.import_suppliers_from_template)
+        self.send_button.clicked.connect(self.send_selected_suppliers)
+        title_row.addWidget(self.load_button)
+        title_row.addWidget(self.template_button)
+        title_row.addWidget(self.import_template_button)
+        title_row.addWidget(self.send_button)
+        title_row.addWidget(self.edit_table_checkbox)
+        root_layout.addLayout(title_row)
 
         self.search_input = QLineEdit()
         self.search_input.setMinimumHeight(36)
@@ -40,18 +64,6 @@ class SupplierSendTab(QWidget):
         search_row.addWidget(self.search_button)
 
         root_layout.addLayout(search_row)
-
-        button_layout = QHBoxLayout()
-        self.load_button = QPushButton("Tedarikçileri Al")
-        self.send_button = QPushButton("Seçili Tedarikçileri Satta'ya Gönder")
-        self.edit_table_checkbox = QCheckBox("Tabloyu düzenlenebilir yap")
-        self.edit_table_checkbox.toggled.connect(self.toggle_table_edit_mode)
-        self.load_button.clicked.connect(self.load_suppliers)
-        self.send_button.clicked.connect(self.send_selected_suppliers)
-        button_layout.addWidget(self.load_button)
-        button_layout.addWidget(self.send_button)
-        button_layout.addWidget(self.edit_table_checkbox)
-        root_layout.addLayout(button_layout)
 
         self.supplier_table = QTableWidget(0, 7)
         self.supplier_table.setHorizontalHeaderLabels([
@@ -91,6 +103,34 @@ class SupplierSendTab(QWidget):
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.search_input.textChanged.connect(self.filter_suppliers)
         self.load_suppliers()
+
+    def download_supplier_template(self):
+        template_path = project_path("Templates", "supplierTemplate.xlsx")
+
+        if not template_path.exists():
+            QMessageBox.critical(self, "Şablon Bulunamadı", "Tedarikçi Excel şablonu bulunamadı.")
+            return
+
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Tedarikçi Şablonunu Kaydet",
+            "supplierTemplate.xlsx",
+            "Excel Dosyaları (*.xlsx)",
+        )
+
+        if not save_path:
+            return
+
+        if not save_path.lower().endswith(".xlsx"):
+            save_path += ".xlsx"
+
+        try:
+            shutil.copyfile(template_path, save_path)
+        except OSError as exc:
+            QMessageBox.critical(self, "Kopyalama Hatası", f"Şablon dosyası kaydedilemedi:\n{exc}")
+            return
+
+        QMessageBox.information(self, "Şablon Hazır", "Tedarikçi şablonu başarıyla kaydedildi.")
 
     def run_search_with_feedback(self):
         self.filter_suppliers(show_no_results_message=True)
@@ -283,3 +323,90 @@ class SupplierSendTab(QWidget):
             current_rows.append(tuple(row_data))
 
         self.populate_supplier_table(current_rows)
+
+    def normalize_header(self, value):
+        return str(value or "").strip().lower()
+
+    def import_suppliers_from_template(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Tedarikçi Şablonunu Seç",
+            "",
+            "Excel Dosyaları (*.xlsx)",
+        )
+
+        if not file_path:
+            return
+
+        try:
+            workbook = load_workbook(file_path, data_only=True)
+            worksheet = workbook.active
+        except Exception as exc:
+            QMessageBox.critical(self, "Şablon Okuma Hatası", f"Excel şablonu okunamadı:\n{exc}")
+            return
+
+        rows = list(worksheet.iter_rows(values_only=True))
+        if not rows:
+            QMessageBox.warning(self, "Boş Dosya", "Seçilen Excel dosyasında veri bulunamadı.")
+            return
+
+        header_row = rows[0]
+        normalized_headers = [self.normalize_header(cell) for cell in header_row]
+
+        header_aliases = {
+            "code": {"kod", "erp_id", "erp id", "erpid", "supplier code", "tedarikçi kodu", "tedarikci kodu"},
+            "name": {"tedarikçi adı", "tedarikci adı", "tedarikci adi", "tedarikçi adi", "name", "supplier name", "unvan"},
+            "contact": {"ilgili kişi", "ilgili kisi", "contact", "contact person", "yetkili"},
+            "phone": {"telefon", "telefon numarası", "telefon numarasi", "phone", "gsm"},
+            "email": {"e-posta", "e posta", "email", "eposta", "mail"},
+            "tax_id": {"vergi no", "vergi numarası", "vergi numarasi", "tax id", "tax number", "vkn"},
+        }
+
+        column_map = {}
+        for index, header in enumerate(normalized_headers):
+            for field_name, aliases in header_aliases.items():
+                if header in aliases and field_name not in column_map:
+                    column_map[field_name] = index
+
+        has_header_mapping = len(column_map) >= 4
+        data_rows = rows[1:] if has_header_mapping else rows
+
+        imported_rows = []
+        for row in data_rows:
+            if row is None:
+                continue
+
+            row_values = list(row)
+            if not any(str(cell).strip() for cell in row_values if cell is not None):
+                continue
+
+            if has_header_mapping:
+                def cell_value(field_name):
+                    cell_index = column_map.get(field_name)
+                    if cell_index is None or cell_index >= len(row_values):
+                        return ""
+                    return str(row_values[cell_index] or "").strip()
+
+                supplier_row = (
+                    cell_value("code"),
+                    cell_value("name"),
+                    cell_value("contact"),
+                    cell_value("phone"),
+                    cell_value("email"),
+                    cell_value("tax_id"),
+                )
+            else:
+                padded_values = [str(cell or "").strip() for cell in row_values[:6]]
+                while len(padded_values) < 6:
+                    padded_values.append("")
+                supplier_row = tuple(padded_values)
+
+            if any(value.strip() for value in supplier_row):
+                imported_rows.append(supplier_row)
+
+        if not imported_rows:
+            QMessageBox.warning(self, "Veri Bulunamadı", "Excel dosyasında içe aktarılacak uygun tedarikçi verisi bulunamadı.")
+            return
+
+        self.apply_supplier_data(imported_rows)
+        QMessageBox.information(self, "İçe Aktarım Tamamlandı", f"{len(imported_rows)} tedarikçi şablondan yüklendi.")
