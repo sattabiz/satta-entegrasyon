@@ -76,7 +76,7 @@ class StockTab(QWidget):
         button_layout = QHBoxLayout()
         self.load_button = QPushButton("Masraf Merkezi ve Kategorileri Al")
         self.load_products_button = QPushButton("Ürünleri Al")
-        self.transfer_button = QPushButton("Seçili Ürünleri Aktar")
+        self.transfer_button = QPushButton("Seçili Ürünleri Satta'ya Gönder")
         self.edit_table_checkbox = QCheckBox("Tabloyu düzenlenebilir yap")
         self.edit_table_checkbox.toggled.connect(self.toggle_table_edit_mode)
         button_layout.addWidget(self.load_button)

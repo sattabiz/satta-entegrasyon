@@ -15,7 +15,7 @@ a = Analysis(
         ('App_Icons/exeIcon.ico', 'App_Icons'),
         ('Templates/supplierTemplate.xlsx', 'Templates'),
     ],
-    hiddenimports=[],
+    hiddenimports=['openpyxl', 'et_xmlfile'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

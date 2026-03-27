@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from Connectors.logo_connector import LogoConnectionConfig, LogoConnector
 from Supplier.push_suppliers import SattaSupplierPushConnector
 from Common.path_helper import project_path
+import unicodedata
 
 
 class SupplierSendTab(QWidget):
@@ -252,7 +253,7 @@ class SupplierSendTab(QWidget):
 
             selected_suppliers.append(
                 {
-                    "name": supplier_name,
+                    "supplier_name": supplier_name,
                     "invited_person": invited_person,
                     "phone": phone,
                     "invited_email": invited_email,
@@ -325,7 +326,12 @@ class SupplierSendTab(QWidget):
         self.populate_supplier_table(current_rows)
 
     def normalize_header(self, value):
-        return str(value or "").strip().lower()
+        normalized_text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
+        normalized_text = "".join(
+            character for character in normalized_text if not unicodedata.combining(character)
+        )
+        normalized_text = normalized_text.replace("_", " ").replace("-", " ")
+        return " ".join(normalized_text.split())
 
     def import_suppliers_from_template(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -355,7 +361,7 @@ class SupplierSendTab(QWidget):
 
         header_aliases = {
             "code": {"kod", "erp_id", "erp id", "erpid", "supplier code", "tedarikçi kodu", "tedarikci kodu"},
-            "name": {"tedarikçi adı", "tedarikci adı", "tedarikci adi", "tedarikçi adi", "name", "supplier name", "unvan"},
+            "supplier_name": {"tedarikçi adı", "tedarikci adı", "tedarikci adi", "tedarikçi adi", "name", "supplier name", "unvan", "firma", "firma adı"},
             "contact": {"ilgili kişi", "ilgili kisi", "contact", "contact person", "yetkili"},
             "phone": {"telefon", "telefon numarası", "telefon numarasi", "phone", "gsm"},
             "email": {"e-posta", "e posta", "email", "eposta", "mail"},
@@ -389,7 +395,7 @@ class SupplierSendTab(QWidget):
 
                 supplier_row = (
                     cell_value("code"),
-                    cell_value("name"),
+                    cell_value("supplier_name"),
                     cell_value("contact"),
                     cell_value("phone"),
                     cell_value("email"),
