@@ -182,6 +182,11 @@ def main() -> None:
     ensure_runtime_files()
     runtime_config = load_runtime_config()
     app = QApplication(sys.argv)
+
+    from updater import check_and_update
+    if check_and_update():
+        sys.exit(0)
+
     window = MainWindow(runtime_config=runtime_config)
     window.show()
     sys.exit(app.exec())
