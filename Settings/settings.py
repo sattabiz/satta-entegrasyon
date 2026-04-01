@@ -1,6 +1,6 @@
 import json
 
-from PySide6.QtWidgets import (
+from Common.qt_compat import (
     QFormLayout,
     QFrame,
     QGroupBox,

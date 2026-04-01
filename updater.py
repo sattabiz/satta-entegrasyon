@@ -4,12 +4,15 @@ import tempfile
 import subprocess
 import requests
 from typing import Optional, Dict, Any
-from PySide6.QtWidgets import QMessageBox, QProgressDialog
-from PySide6.QtCore import Qt, QThread, Signal, QEventLoop
+from Common.qt_compat import QMessageBox, QProgressDialog
+from Common.qt_compat import Qt, QThread, Signal, QEventLoop
 from versiyon import APP_VERSION
 
 GITHUB_API_URL = "https://api.github.com/repos/sattabiz/satta-entegrasyon/releases/latest"
-INSTALLER_NAME = "SattaEntegrasyon-Setup.exe"
+if sys.version_info.major == 3 and sys.version_info.minor < 9:
+    INSTALLER_NAME = "SattaEntegrasyon-Setup-Legacy.exe"
+else:
+    INSTALLER_NAME = "SattaEntegrasyon-Setup.exe"
 
 class DownloadThread(QThread):
     progress = Signal(int, int)
@@ -122,12 +125,17 @@ def check_and_update(parent_widget=None) -> bool:
                 
                 loop = QEventLoop()
                 progress_dialog.finished.connect(loop.quit)
-                loop.exec()
+                if hasattr(loop, "exec"):
+                    loop.exec()
+                else:
+                    loop.exec_()
 
                 if result["success"] and os.path.exists(str(result["path"])):
                     exe_path = str(result["path"])
-                    subprocess.Popen([exe_path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/FORCECLOSEAPPLICATIONS"])
-                    return True
+                    download_thread.wait()
+                    cmd = f'cmd.exe /c ping 127.0.0.1 -n 3 > nul & "{exe_path}" /VERYSILENT /SUPPRESSMSGBOXES /FORCECLOSEAPPLICATIONS'
+                    subprocess.Popen(cmd, shell=True)
+                    os._exit(0)
 
     except Exception as e:
         print(f"Güncelleme kontrolü başarısız oldu: {e}")

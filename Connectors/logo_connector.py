@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from typing import List, Sequence, Tuple, Optional
 
 
 SupplierUiRow = Tuple[str, str, str, str, str, str, str]
@@ -16,7 +16,7 @@ class LogoConnectionConfig:
 
 
 class LogoConnector:
-    def __init__(self, config: LogoConnectionConfig | None = None):
+    def __init__(self, config: Optional[LogoConnectionConfig] = None):
         self.config = config or LogoConnectionConfig()
 
     def get_suppliers_for_ui(self) -> List[SupplierUiRow]:

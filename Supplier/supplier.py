@@ -1,7 +1,7 @@
 import shutil
 from openpyxl import load_workbook
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
+from Common.qt_compat import Qt
+from Common.qt_compat import (
     QAbstractItemView,
     QCheckBox,
     QFileDialog,
@@ -104,7 +104,6 @@ class SupplierSendTab(QWidget):
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.search_input.textChanged.connect(self.filter_suppliers)
-        self.load_suppliers()
 
     def download_supplier_template(self):
         template_path = project_path("Templates", "supplierTemplate.xlsx")

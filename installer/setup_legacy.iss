@@ -1,9 +1,9 @@
 #define MyAppName "Satta Entegrasyon"
-#define MyAppExeName "SattaEntegrasyon.exe"
+#define MyAppExeName "SattaEntegrasyon_Legacy.exe"
 #define MyAppVersion "0.2.0"
 #define MyAppPublisher "Satta"
-#define MyAppDirName "SattaEntegrasyon"
-#define MyOutputBaseFilename "SattaEntegrasyon-Setup"
+#define MyAppDirName "SattaEntegrasyon-Legacy"
+#define MyOutputBaseFilename "SattaEntegrasyon-Setup-Legacy"
 
 [Setup]
 AppName={#MyAppName}
@@ -36,7 +36,7 @@ Name: "connector\sap"; Description: "SAP Connector"; Types: custom; Flags: exclu
 Name: "connector\canias"; Description: "Canias Connector"; Types: custom; Flags: exclusive
 
 [Files]
-Source: "..\dist\SattaEntegrasyon\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: main
+Source: "..\dist\SattaEntegrasyon_Legacy\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: main
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

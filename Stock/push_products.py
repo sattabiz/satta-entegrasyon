@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Union
 
 import requests
 
@@ -149,7 +149,7 @@ class SattaProductPushConnector:
         text = self._safe_text(value)
         return [text] if text else []
 
-    def _to_number(self, value: Any, default: int | float = 0) -> int | float:
+    def _to_number(self, value: Any, default: Union[int, float] = 0) -> Union[int, float]:
         if value is None or value == "":
             return default
 

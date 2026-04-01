@@ -1,14 +1,15 @@
 import json
 import sys
+from typing import Optional
 from Common.path_helper import project_path, ensure_directory, get_user_data_dir, user_data_path
 from versiyon import APP_DISPLAY_NAME, APP_VERSION
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPixmap, QIcon
+from Common.qt_compat import Qt
+from Common.qt_compat import QFont, QPixmap, QIcon
 from Settings.settings import SettingsTab
 from Supplier.supplier import SupplierSendTab
 from Invoice.invoice import InvoiceTransferTab
 from Stock.stock import StockTab
-from PySide6.QtWidgets import (
+from Common.qt_compat import (
     QApplication,
     QLabel,
     QMainWindow,
@@ -32,7 +33,7 @@ def get_connector_display_name(connector_name: str) -> str:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, runtime_config: dict | None = None):
+    def __init__(self, runtime_config: Optional[dict] = None):
         super().__init__()
         self.runtime_config = runtime_config or {}
         active_connector = str(self.runtime_config.get("active_connector", "")).strip()
@@ -189,7 +190,10 @@ def main() -> None:
 
     window = MainWindow(runtime_config=runtime_config)
     window.show()
-    sys.exit(app.exec())
+    if hasattr(app, "exec"):
+        sys.exit(app.exec())
+    else:
+        sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 import json
 from Common.path_helper import user_data_path
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
+from Common.qt_compat import Qt
+from Common.qt_compat import (
     QAbstractItemView,
     QCheckBox,
     QHBoxLayout,

@@ -1,6 +1,6 @@
 import pyodbc
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 @dataclass
 class SupplierReaderConfig:
@@ -11,7 +11,7 @@ class SupplierReaderConfig:
     firm_no: int = 1
 
 class SupplierReader:
-    def __init__(self, config: SupplierReaderConfig | None = None):
+    def __init__(self, config: Optional[SupplierReaderConfig] = None):
         self.config = config or SupplierReaderConfig()
 
     def get_suppliers(self) -> List[Tuple[str, str, str, str, str, str]]:

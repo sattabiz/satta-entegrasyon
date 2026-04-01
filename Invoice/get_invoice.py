@@ -3,7 +3,7 @@ import requests
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 from Common.path_helper import user_data_path
 
 
@@ -23,7 +23,7 @@ class SattaInvoiceConfig:
     token_storage_file: str = "satta_session.json"
 
 class SattaInvoiceConnector:
-    def __init__(self, config: SattaInvoiceConfig | None = None):
+    def __init__(self, config: Optional[SattaInvoiceConfig] = None):
         self.config = config or SattaInvoiceConfig()
 
     def get_invoices_for_ui(self) -> Tuple[List[InvoiceUiRow], Dict[str, List[InvoiceDetailRow]], Dict[str, int]]:
@@ -408,7 +408,7 @@ class SattaInvoiceConnector:
         username = self._normalized_username().replace("@", "_").replace(".", "_")
         return f"mock_token_{username}"
 
-    def _normalize_invoice_id(self, value: Any) -> int | None:
+    def _normalize_invoice_id(self, value: Any) -> Optional[int]:
         try:
             if value is None:
                 return None

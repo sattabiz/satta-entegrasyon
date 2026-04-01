@@ -1,7 +1,7 @@
 
 
 import json
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import requests
 
@@ -18,14 +18,14 @@ class SattaInvoicePushConnector:
         self.username = self._safe_text(self.settings.get("username"))
         self.token = self._resolve_token()
 
-    def mark_invoice_saved(self, invoice_id: int | str) -> Dict[str, Any]:
+    def mark_invoice_saved(self, invoice_id: Union[int, str]) -> Dict[str, Any]:
         clean_invoice_id = self._normalize_invoice_id(invoice_id)
         if clean_invoice_id is None:
             raise ValueError("Geçerli bir invoice_id gönderilmelidir.")
 
         return self._post_invoice_saved(clean_invoice_id)
 
-    def mark_invoices_saved(self, invoice_ids: Iterable[int | str]) -> List[Dict[str, Any]]:
+    def mark_invoices_saved(self, invoice_ids: Iterable[Union[int, str]]) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
         for invoice_id in invoice_ids:
             results.append(self.mark_invoice_saved(invoice_id))
@@ -126,7 +126,7 @@ class SattaInvoicePushConnector:
                 return value.strip()
         return ""
 
-    def _normalize_invoice_id(self, invoice_id: int | str) -> int | None:
+    def _normalize_invoice_id(self, invoice_id: Union[int, str]) -> Optional[int]:
         try:
             if invoice_id is None:
                 return None
