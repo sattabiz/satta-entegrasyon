@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from Connectors.logo_connector import LogoConnectionConfig, LogoConnector
+from Supplier.supplier_reader import SupplierReader, SupplierReaderConfig
+import json
 from Supplier.push_suppliers import SattaSupplierPushConnector
 from Common.path_helper import project_path
 import unicodedata
@@ -137,12 +138,30 @@ class SupplierSendTab(QWidget):
         self.filter_suppliers(show_no_results_message=True)
 
     def fetch_suppliers(self):
-        connector = LogoConnector(
-            LogoConnectionConfig(
-                use_mock_data=True,
-            )
-        )
-        return [row[:6] for row in connector.get_suppliers_for_ui()]
+        try:
+            from Common.path_helper import user_data_path
+            app_settings_file = user_data_path("app_settings.json")
+            if app_settings_file.exists():
+                with open(app_settings_file, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+                
+                logo_settings = settings.get("logo", {})
+                config = SupplierReaderConfig(
+                    server=logo_settings.get("server", ""),
+                    database=logo_settings.get("database", ""),
+                    username=logo_settings.get("username", ""),
+                    password=logo_settings.get("password", ""),
+                    firm_no=int(logo_settings.get("firm_no", 1))
+                )
+            else:
+                config = SupplierReaderConfig()
+
+            reader = SupplierReader(config)
+            return reader.get_suppliers()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Veritabanı Hatası", f"Tedarikçileri çekerken hata oluştu:\n{str(e)}")
+            return []
 
     def apply_supplier_data(self, rows):
         self.all_suppliers = rows
