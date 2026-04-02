@@ -8,7 +8,8 @@ class SupplierReaderConfig:
     database: str = "TIGERDB"
     username: str = "sa"
     password: str = ""
-    firm_no: int = 1
+    firm_no: int = ""
+    period_no: int = ""
 
 class SupplierReader:
     def __init__(self, config: Optional[SupplierReaderConfig] = None):
@@ -37,7 +38,12 @@ class SupplierReader:
             f"PWD={self.config.password};"
         )
         
-        table_name = f"LG_{self.config.firm_no:03d}_CLCARD"
+        firm_str = f"{self.config.firm_no:03d}"
+        period_str = f"{self.config.period_no:02d}"
+        
+        # CLCARD tablosu dönemden bağımsız olduğu için sadece firma numarasını kullanır.
+        # Döneme bağlı tablolar (ör: STLINE, INVOICE) için: f"LG_{firm_str}_{period_str}_INVOICE"
+        table_name = f"LG_{firm_str}_CLCARD"
         
         query = f"""
         SELECT 

@@ -12,6 +12,7 @@ class LogoConnectionConfig:
     username: str = "sa"
     password: str = ""
     firm_no: int = 1
+    period_no: int = 1
     use_mock_data: bool = True
 
 

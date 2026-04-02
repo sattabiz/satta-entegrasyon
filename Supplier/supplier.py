@@ -150,7 +150,8 @@ class SupplierSendTab(QWidget):
                     database=logo_settings.get("database", ""),
                     username=logo_settings.get("username", ""),
                     password=logo_settings.get("password", ""),
-                    firm_no=int(logo_settings.get("firm_no", 1))
+                    firm_no=int(logo_settings.get("firm_no", "")),
+                    period_no=int(logo_settings.get("period_no", ""))
                 )
             else:
                 config = SupplierReaderConfig()
