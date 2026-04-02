@@ -8,8 +8,26 @@ class SupplierReaderConfig:
     database: str = "TIGERDB"
     username: str = "sa"
     password: str = ""
-    firm_no: int = ""
-    period_no: int = ""
+    firm_no: int = 1
+    period_no: int = 1
+
+    def __post_init__(self):
+        self.firm_no = self._coerce_int(self.firm_no, "firm_no")
+        self.period_no = self._coerce_int(self.period_no, "period_no")
+
+    @staticmethod
+    def _coerce_int(value, field_name: str) -> int:
+        if isinstance(value, int):
+            return value
+
+        text_value = str(value).strip()
+        if not text_value:
+            raise ValueError(f"{field_name} boş olamaz.")
+
+        try:
+            return int(text_value)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} sayısal olmalıdır: {value}") from exc
 
 class SupplierReader:
     def __init__(self, config: Optional[SupplierReaderConfig] = None):
@@ -22,6 +40,10 @@ class SupplierReader:
         """
         raw_rows = self._read_from_sql()
         return [self._normalize_row(row) for row in raw_rows]
+
+    def _build_table_name(self) -> str:
+        firm_str = f"{self.config.firm_no:03d}"
+        return f"LG_{firm_str}_CLCARD"
 
     def _read_from_sql(self) -> List[Tuple[str, str, str, str, str, str]]:
         # ODBC sürücüsünü sistemde var olan genel bir SQL Server sürücüsü olarak varsayıyoruz
@@ -38,12 +60,9 @@ class SupplierReader:
             f"PWD={self.config.password};"
         )
         
-        firm_str = f"{self.config.firm_no:03d}"
-        period_str = f"{self.config.period_no:02d}"
-        
         # CLCARD tablosu dönemden bağımsız olduğu için sadece firma numarasını kullanır.
         # Döneme bağlı tablolar (ör: STLINE, INVOICE) için: f"LG_{firm_str}_{period_str}_INVOICE"
-        table_name = f"LG_{firm_str}_CLCARD"
+        table_name = self._build_table_name()
         
         query = f"""
         SELECT 
@@ -74,6 +93,23 @@ class SupplierReader:
                     
                     result.append((code, name, contact, phone, email, taxnr))
                 return result
+        except pyodbc.Error as e:
+            error_text = str(e)
+            if "Invalid object name" in error_text:
+                raise Exception(
+                    "Logo veritabanı sorgu hatası:\n"
+                    f"'{table_name}' tablosu bulunamadı.\n\n"
+                    "Bu genelde şu nedenlerle olur:\n"
+                    "- Ayarlardaki Firma No yanlış\n"
+                    "- Yanlış Logo veritabanına bağlanılıyor\n"
+                    "- İlgili firmaya ait tablo bu veritabanında yok\n\n"
+                    f"Bağlantı bilgileri:\n"
+                    f"Server: {self.config.server}\n"
+                    f"Database: {self.config.database}\n"
+                    f"Firma No: {self.config.firm_no}\n"
+                    f"Sorgulanan tablo: {table_name}"
+                )
+            raise Exception(f"Logo veritabanı bağlantı veya sorgu hatası:\n{error_text}")
         except Exception as e:
             raise Exception(f"Logo veritabanı bağlantı veya sorgu hatası:\n{str(e)}")
 
