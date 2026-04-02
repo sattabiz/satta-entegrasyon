@@ -69,10 +69,7 @@ class ProductReader:
         self.config = config or ProductReaderConfig()
 
     def read_products(self) -> List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str]]:
-        if self.config.use_mock_data:
-            raw_rows = self._read_mock_products()
-        else:
-            raw_rows = self._read_from_sql()
+        raw_rows = self._read_from_sql()
 
         return [self._normalize_row(row) for row in raw_rows]
 
@@ -214,11 +211,3 @@ class ProductReader:
             description,
             status,
         )
-
-    def _read_mock_products(self) -> List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str]]:
-        return [
-            ("STK-001", "A4 Kağıt", "", "", "", "", "20", "", "", "", "", "", ""),
-            ("STK-002", "Mavi Tükenmez Kalem", "", "", "", "", "20", "", "", "", "", "", ""),
-            ("STK-003", "Tonik 500 ML", "", "", "", "", "20", "", "", "", "", "", ""),
-            ("STK-004", "Karton Bardak", "", "", "", "", "20", "", "", "", "", "", ""),
-        ]
