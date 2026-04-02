@@ -103,7 +103,6 @@ class SupplierSendTab(QWidget):
         self.all_suppliers = []
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
-        self.search_input.textChanged.connect(self.filter_suppliers)
 
     def download_supplier_template(self):
         template_path = project_path("Templates", "supplierTemplate.xlsx")
@@ -165,7 +164,6 @@ class SupplierSendTab(QWidget):
 
     def apply_supplier_data(self, rows):
         self.all_suppliers = rows
-        self.populate_supplier_table(self.all_suppliers)
 
         try:
             self.supplier_table.itemChanged.disconnect(self.update_selected_count)
@@ -173,6 +171,14 @@ class SupplierSendTab(QWidget):
             pass
         except TypeError:
             pass
+
+        self.supplier_table.setUpdatesEnabled(False)
+        self.supplier_table.blockSignals(True)
+        try:
+            self.populate_supplier_table(self.all_suppliers)
+        finally:
+            self.supplier_table.blockSignals(False)
+            self.supplier_table.setUpdatesEnabled(True)
 
         self.supplier_table.itemChanged.connect(self.update_selected_count)
         self.update_status_summary()
@@ -206,21 +212,24 @@ class SupplierSendTab(QWidget):
         search_text = self.search_input.text().strip().lower()
 
         if not search_text:
-            self.populate_supplier_table(self.all_suppliers)
-            self.update_status_summary()
-            if self.supplier_table.rowCount() > 0:
-                self.supplier_table.selectRow(0)
-            return
+            filtered_rows = self.all_suppliers
+        else:
+            filtered_rows = []
+            for row in self.all_suppliers:
+                supplier_code = str(row[0]).lower()
+                supplier_name = str(row[1]).lower()
 
-        filtered_rows = []
-        for row in self.all_suppliers:
-            supplier_code = str(row[0]).lower()
-            supplier_name = str(row[1]).lower()
+                if search_text in supplier_code or search_text in supplier_name:
+                    filtered_rows.append(row)
 
-            if search_text in supplier_code or search_text in supplier_name:
-                filtered_rows.append(row)
+        self.supplier_table.setUpdatesEnabled(False)
+        self.supplier_table.blockSignals(True)
+        try:
+            self.populate_supplier_table(filtered_rows)
+        finally:
+            self.supplier_table.blockSignals(False)
+            self.supplier_table.setUpdatesEnabled(True)
 
-        self.populate_supplier_table(filtered_rows)
         self.update_status_summary()
 
         if self.supplier_table.rowCount() > 0:
@@ -334,15 +343,16 @@ class SupplierSendTab(QWidget):
         else:
             self.supplier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
-        current_rows = []
         for row in range(self.supplier_table.rowCount()):
-            row_data = []
             for col in range(1, self.supplier_table.columnCount()):
                 item = self.supplier_table.item(row, col)
-                row_data.append(item.text() if item else "")
-            current_rows.append(tuple(row_data))
+                if item is None:
+                    continue
 
-        self.populate_supplier_table(current_rows)
+                if checked and col != 1:
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
+                else:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
     def normalize_header(self, value):
         normalized_text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
