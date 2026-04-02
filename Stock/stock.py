@@ -33,7 +33,10 @@ class StockTab(QWidget):
         root_layout = QVBoxLayout(self)
 
         title_label = QLabel("Ürün Listesi")
-        root_layout.addWidget(title_label)
+
+        title_row = QHBoxLayout()
+        title_row.addWidget(title_label)
+        title_row.addStretch()
 
         top_form_layout = QVBoxLayout()
 
@@ -79,17 +82,16 @@ class StockTab(QWidget):
 
         root_layout.addLayout(top_form_layout)
 
-        button_layout = QHBoxLayout()
         self.load_button = QPushButton("Masraf Merkezi ve Kategorileri Al")
         self.load_products_button = QPushButton("Ürünleri Al")
         self.transfer_button = QPushButton("Seçili Ürünleri Satta'ya Gönder")
         self.edit_table_checkbox = QCheckBox("Tabloyu düzenlenebilir yap")
         self.edit_table_checkbox.toggled.connect(self.toggle_table_edit_mode)
-        button_layout.addWidget(self.load_button)
-        button_layout.addWidget(self.load_products_button)
-        button_layout.addWidget(self.transfer_button)
-        button_layout.addWidget(self.edit_table_checkbox)
-        root_layout.addLayout(button_layout)
+        title_row.addWidget(self.load_button)
+        title_row.addWidget(self.load_products_button)
+        title_row.addWidget(self.transfer_button)
+        title_row.addWidget(self.edit_table_checkbox)
+        root_layout.addLayout(title_row)
         root_layout.addLayout(search_row)
 
         self.stock_table = QTableWidget(0, 14)
@@ -134,7 +136,6 @@ class StockTab(QWidget):
         self.all_products = []
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
-        self.search_input.textChanged.connect(self.filter_products)
         self.load_button.clicked.connect(self.load_cost_centers_and_categories)
         self.load_products_button.clicked.connect(self.load_products)
         self.transfer_button.clicked.connect(self.transfer_selected_products)
@@ -170,6 +171,7 @@ class StockTab(QWidget):
             QMessageBox.critical(self, "Logo Hatası", f"Ürünler alınamadı:\n{exc}")
             return
 
+        self.edit_table_checkbox.setChecked(False)
         self.apply_product_data(products)
 
     def apply_product_data(self, rows):
@@ -261,9 +263,16 @@ class StockTab(QWidget):
 
         self.stock_table.setColumnWidth(0, 36)
 
+    def normalize_table_row(self, row_data):
+        normalized_row = [str(value) if value is not None else "" for value in row_data[:13]]
+        while len(normalized_row) < 13:
+            normalized_row.append("")
+        return tuple(normalized_row)
+
     def populate_stock_table(self, rows):
         self.stock_table.setRowCount(0)
-        for row_data in rows:
+        for raw_row_data in rows:
+            row_data = self.normalize_table_row(raw_row_data)
             row_index = self.stock_table.rowCount()
             self.stock_table.insertRow(row_index)
 
@@ -289,7 +298,7 @@ class StockTab(QWidget):
             for row in self.all_products:
                 product_code = str(row[0]).lower()
                 product_name = str(row[1]).lower()
-                category = str(row[2]).lower()
+                category = str(row[2]).lower() if len(row) > 2 else ""
 
                 if search_text in product_code or search_text in product_name or search_text in category:
                     filtered_rows.append(row)
