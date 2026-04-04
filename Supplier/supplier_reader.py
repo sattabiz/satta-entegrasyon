@@ -84,6 +84,7 @@ class SupplierReader:
             EMAILADDR,
             TAXNR
         FROM {table_name}
+        WHERE CARDTYPE IN (2,3)
         ORDER BY LOGICALREF DESC
         """
         
