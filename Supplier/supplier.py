@@ -66,7 +66,7 @@ class SupplierSendTab(QWidget):
 
         root_layout.addLayout(search_row)
 
-        self.supplier_table = QTableWidget(0, 7)
+        self.supplier_table = QTableWidget(0, 8)
         self.supplier_table.setHorizontalHeaderLabels([
             "Seç",
             "Kod",
@@ -75,6 +75,7 @@ class SupplierSendTab(QWidget):
             "Telefon Numarası",
             "E-posta Adresi",
             "Vergi No",
+            "Son Fatura Türü",
         ])
         self.supplier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.supplier_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -89,6 +90,7 @@ class SupplierSendTab(QWidget):
         self.supplier_table.setColumnWidth(4, 140)
         self.supplier_table.setColumnWidth(5, 220)
         self.supplier_table.setColumnWidth(6, 130)
+        self.supplier_table.setColumnWidth(7, 190)
         self.supplier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         root_layout.addWidget(self.supplier_table)
 
@@ -199,8 +201,8 @@ class SupplierSendTab(QWidget):
         self.supplier_table.setRowCount(0)
 
         for row_data in rows:
-            normalized_row = [str(value) if value is not None else "" for value in row_data[:6]]
-            while len(normalized_row) < 6:
+            normalized_row = [str(value) if value is not None else "" for value in row_data[:7]]
+            while len(normalized_row) < 7:
                 normalized_row.append("")
 
             supplier_code = normalized_row[0].strip()
@@ -283,8 +285,8 @@ class SupplierSendTab(QWidget):
 
         updated_rows = []
         for row_data in self.all_suppliers:
-            normalized_row = list(row_data[:6])
-            while len(normalized_row) < 6:
+            normalized_row = list(row_data[:7])
+            while len(normalized_row) < 7:
                 normalized_row.append("")
 
             if str(normalized_row[0]).strip() == supplier_code:
@@ -340,6 +342,7 @@ class SupplierSendTab(QWidget):
             phone_item = self.supplier_table.item(row, 4)
             email_item = self.supplier_table.item(row, 5)
             tax_id_item = self.supplier_table.item(row, 6)
+            last_invoice_type_item = self.supplier_table.item(row, 7)
 
             supplier_code = code_item.text().strip() if code_item else ""
             supplier_name = name_item.text().strip() if name_item else ""
@@ -347,6 +350,7 @@ class SupplierSendTab(QWidget):
             phone = phone_item.text().strip() if phone_item else ""
             invited_email = email_item.text().strip() if email_item else ""
             tax_id = tax_id_item.text().strip() if tax_id_item else ""
+            last_invoice_type = last_invoice_type_item.text().strip() if last_invoice_type_item else ""
 
             missing_fields = []
             if not supplier_name:
@@ -375,6 +379,7 @@ class SupplierSendTab(QWidget):
                     "invited_email": invited_email,
                     "tax_id": tax_id,
                     "erp_id": supplier_code,
+                    "last_invoice_type": last_invoice_type,
                 }
             )
 
@@ -497,10 +502,11 @@ class SupplierSendTab(QWidget):
                     cell_value("phone"),
                     cell_value("email"),
                     cell_value("tax_id"),
+                    "",
                 )
             else:
-                padded_values = [str(cell or "").strip() for cell in row_values[:6]]
-                while len(padded_values) < 6:
+                padded_values = [str(cell or "").strip() for cell in row_values[:7]]
+                while len(padded_values) < 7:
                     padded_values.append("")
                 supplier_row = tuple(padded_values)
 

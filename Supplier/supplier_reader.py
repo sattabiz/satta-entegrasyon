@@ -37,10 +37,10 @@ class SupplierReader:
     def __init__(self, config: Optional[SupplierReaderConfig] = None):
         self.config = config or SupplierReaderConfig()
 
-    def get_suppliers(self) -> List[Tuple[str, str, str, str, str, str]]:
+    def get_suppliers(self) -> List[Tuple[str, str, str, str, str, str, str]]:
         """
         Logo veritabanından pyodbc aracılığıyla tedarikçi kartlarını (CLCARD) getirir.
-        Dönen alan dizilimi: (kod, unvan, ilgili_kisi, telefon, e-posta, vergi_no)
+        Dönen alan dizilimi: (kod, unvan, ilgili_kisi, telefon, e-posta, vergi_no, son_fatura_turu)
         """
         raw_rows = self._read_from_sql()
         return [self._normalize_row(row) for row in raw_rows]
@@ -66,7 +66,7 @@ class SupplierReader:
             "Trusted_Connection=yes;"
         )
 
-    def _read_from_sql(self) -> List[Tuple[str, str, str, str, str, str]]:
+    def _read_from_sql(self) -> List[Tuple[str, str, str, str, str, str, str]]:
         # ODBC sürücüsünü sistemde var olan genel bir SQL Server sürücüsü olarak varsayıyoruz.
         # Kullanıcı adı girildiyse SQL Authentication, boş bırakıldıysa Windows Authentication kullanılır.
         conn_str = self._build_connection_string()
@@ -74,18 +74,30 @@ class SupplierReader:
         # CLCARD tablosu dönemden bağımsız olduğu için sadece firma numarasını kullanır.
         # Döneme bağlı tablolar (ör: STLINE, INVOICE) için: f"LG_{firm_str}_{period_str}_INVOICE"
         table_name = self._build_table_name()
-        
+        clfline_table_name = f"LG_{self.config.firm_no:03d}_{self.config.period_no:02d}_CLFLINE"
         query = f"""
         SELECT 
-            CODE,
-            DEFINITION_,
+            C.CODE,
+            C.DEFINITION_,
             '' AS contact_name,
-            CASE WHEN TELNRS1 IS NOT NULL AND LTRIM(RTRIM(TELNRS1)) <> '' THEN TELNRS1 ELSE TELNRS2 END AS phone,
-            EMAILADDR,
-            TAXNR
-        FROM {table_name}
-        WHERE CARDTYPE IN (2,3)
-        ORDER BY LOGICALREF DESC
+            CASE WHEN C.TELNRS1 IS NOT NULL AND LTRIM(RTRIM(C.TELNRS1)) <> '' THEN C.TELNRS1 ELSE C.TELNRS2 END AS phone,
+            C.EMAILADDR,
+            C.TAXNR,
+            CASE LF.TRCODE
+                WHEN 31 THEN 'Satınalma Faturası'
+                WHEN 34 THEN 'Alınan Hizmet Faturası'
+                ELSE ''
+            END AS last_invoice_type
+        FROM {table_name} C
+        OUTER APPLY (
+            SELECT TOP 1 F.TRCODE
+            FROM {clfline_table_name} F WITH (NOLOCK)
+            WHERE F.CLIENTREF = C.LOGICALREF
+              AND F.TRCODE IN (31, 34)
+            ORDER BY F.DATE_ DESC, F.LOGICALREF DESC
+        ) LF
+        WHERE C.CARDTYPE IN (2, 3)
+        ORDER BY C.LOGICALREF DESC
         """
         
         try:
@@ -102,8 +114,9 @@ class SupplierReader:
                     phone = str(r[3]) if r[3] is not None else ""
                     email = str(r[4]) if r[4] is not None else ""
                     taxnr = str(r[5]) if r[5] is not None else ""
+                    last_invoice_type = str(r[6]) if r[6] is not None else ""
                     
-                    result.append((code, name, contact, phone, email, taxnr))
+                    result.append((code, name, contact, phone, email, taxnr, last_invoice_type))
                 return result
         except pyodbc.Error as e:
             error_text = str(e)
@@ -126,27 +139,31 @@ class SupplierReader:
             if "Invalid object name" in error_text:
                 raise Exception(
                     "Logo veritabanı sorgu hatası:\n"
-                    f"'{table_name}' tablosu bulunamadı.\n\n"
+                    f"'{table_name}' veya '{clfline_table_name}' tablosu bulunamadı.\n\n"
                     "Bu genelde şu nedenlerle olur:\n"
                     "- Ayarlardaki Firma No yanlış\n"
+                    "- Ayarlardaki Dönem No yanlış\n"
                     "- Yanlış Logo veritabanına bağlanılıyor\n"
-                    "- İlgili firmaya ait tablo bu veritabanında yok\n\n"
+                    "- İlgili firmaya / döneme ait tablo bu veritabanında yok\n\n"
                     f"Bağlantı bilgileri:\n"
                     f"Server: {self.config.server}\n"
                     f"Database: {self.config.database}\n"
                     f"Firma No: {self.config.firm_no}\n"
-                    f"Sorgulanan tablo: {table_name}"
+                    f"Dönem No: {self.config.period_no}\n"
+                    f"Sorgulanan cari tablo: {table_name}\n"
+                    f"Sorgulanan hareket tablo: {clfline_table_name}"
                 )
             raise Exception(f"Logo veritabanı bağlantı veya sorgu hatası:\n{error_text}")
         except Exception as e:
             raise Exception(f"Logo veritabanı bağlantı veya sorgu hatası:\n{str(e)}")
 
-    def _normalize_row(self, row: Tuple[str, str, str, str, str, str]) -> Tuple[str, str, str, str, str, str]:
+    def _normalize_row(self, row: Tuple[str, str, str, str, str, str, str]) -> Tuple[str, str, str, str, str, str, str]:
         return (
             str(row[0]).strip(),
             str(row[1]).strip(),
             str(row[2]).strip(),
             str(row[3]).strip(),
             str(row[4]).strip(),
-            str(row[5]).strip()
+            str(row[5]).strip(),
+            str(row[6]).strip()
         )
