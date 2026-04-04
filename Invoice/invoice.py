@@ -120,6 +120,7 @@ class InvoiceTransferTab(QWidget):
         self.all_invoices = []
         self.invoice_details = {}
         self.invoice_id_map = {}
+        self.invoice_raw_map = {}
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.search_input.textChanged.connect(self.filter_invoices)
@@ -168,10 +169,11 @@ class InvoiceTransferTab(QWidget):
 
         return settings_data.get("satta", {})
 
-    def apply_invoice_data(self, invoice_rows, invoice_details, invoice_id_map):
+    def apply_invoice_data(self, invoice_rows, invoice_details, invoice_id_map, invoice_raw_map):
         self.all_invoices = invoice_rows
         self.invoice_details = invoice_details
         self.invoice_id_map = invoice_id_map
+        self.invoice_raw_map = invoice_raw_map
 
         self.populate_invoice_table(self.all_invoices)
 
@@ -193,8 +195,8 @@ class InvoiceTransferTab(QWidget):
             self.detail_title_label.setText("Seçili fatura kalemleri")
 
     def load_invoices(self):
-        invoice_rows, invoice_details, invoice_id_map = self.fetch_invoices()
-        self.apply_invoice_data(invoice_rows, invoice_details, invoice_id_map)
+        invoice_rows, invoice_details, invoice_id_map, invoice_raw_map = self.fetch_invoices()
+        self.apply_invoice_data(invoice_rows, invoice_details, invoice_id_map, invoice_raw_map)
 
     def populate_invoice_table(self, rows):
         self.invoice_table.setRowCount(0)
@@ -355,6 +357,26 @@ class InvoiceTransferTab(QWidget):
 
         return selected_invoice_nos
 
+    def get_selected_raw_invoices(self):
+        selected_raw_invoices = []
+
+        for invoice_id in self.get_selected_invoice_ids():
+            raw_invoice = self.invoice_raw_map.get(invoice_id)
+            if isinstance(raw_invoice, dict):
+                selected_raw_invoices.append(raw_invoice)
+
+        return selected_raw_invoices
+
+    def build_logo_transfer_payloads(self, selected_raw_invoices):
+        logo_settings = self.load_logo_settings()
+        payload_builder = LogoPayloadBuilder(logo_settings)
+        payloads = []
+
+        for raw_invoice in selected_raw_invoices:
+            payloads.append(payload_builder.build_invoice_payload(raw_invoice))
+
+        return payloads
+
     def remove_transferred_invoices_from_ui(self, selected_invoice_nos):
         selected_invoice_no_set = {invoice_no.strip() for invoice_no in selected_invoice_nos if str(invoice_no).strip()}
         if not selected_invoice_no_set:
@@ -365,9 +387,16 @@ class InvoiceTransferTab(QWidget):
             if str(row[0]).strip() not in selected_invoice_no_set
         ]
 
+        removed_invoice_ids = []
+
         for invoice_no in selected_invoice_no_set:
             self.invoice_details.pop(invoice_no, None)
-            self.invoice_id_map.pop(invoice_no, None)
+            invoice_id = self.invoice_id_map.pop(invoice_no, None)
+            if invoice_id is not None:
+                removed_invoice_ids.append(invoice_id)
+
+        for invoice_id in removed_invoice_ids:
+            self.invoice_raw_map.pop(invoice_id, None)
 
         self.populate_invoice_table(self.all_invoices)
         self.update_status_summary()
@@ -382,28 +411,82 @@ class InvoiceTransferTab(QWidget):
     def transfer_selected_invoices(self):
         selected_invoice_ids = self.get_selected_invoice_ids()
         selected_invoice_nos = self.get_selected_invoice_nos()
+        selected_raw_invoices = self.get_selected_raw_invoices()
 
         if not selected_invoice_ids:
             QMessageBox.warning(self, "Seçim Yok", "Önce aktarılacak faturaları seç.")
             return
 
-        connector = SattaInvoicePushConnector()
-
-        try:
-            connector.mark_invoices_saved(selected_invoice_ids)
-        except Exception as exc:
-            QMessageBox.critical(self, "Aktarım Hatası", f"Seçili faturalar Satta üzerinde işaretlenemedi:\n{exc}")
+        if len(selected_raw_invoices) != len(selected_invoice_ids):
+            QMessageBox.critical(
+                self,
+                "Aktarım Hatası",
+                "Seçili faturaların ham verileri eksik. Faturaları yeniden yükleyip tekrar dene.",
+            )
             return
 
-        connector_display_name = self.get_connector_display_name()
+        if self.active_connector != "logo":
+            connector_display_name = self.get_connector_display_name()
+            QMessageBox.information(
+                self,
+                "Bilgi",
+                f"Bridge aktarımı şu an yalnızca Logo için hazır. Aktif connector: {connector_display_name}",
+            )
+            return
 
-        QMessageBox.information(
-            self,
-            "Aktarım Tamamlandı",
-            f"Seçili {len(selected_invoice_ids)} fatura {connector_display_name} için Satta üzerinde muhasebeye aktarıldı olarak işaretlendi.",
-        )
+        try:
+            payloads = self.build_logo_transfer_payloads(selected_raw_invoices)
+        except Exception as exc:
+            QMessageBox.critical(self, "Payload Hatası", f"Logo aktarım payload'ı hazırlanamadı:\n{exc}")
+            return
 
-        self.remove_transferred_invoices_from_ui(selected_invoice_nos)
+        bridge_runner = LogoBridgeRunner()
+        successful_invoice_ids = []
+        failed_results = []
+
+        for invoice_id, invoice_no, payload in zip(selected_invoice_ids, selected_invoice_nos, payloads):
+            try:
+                bridge_result = bridge_runner.run_invoice_transfer(payload)
+            except Exception as exc:
+                failed_results.append(f"{invoice_no}: Bridge çalıştırılamadı - {exc}")
+                continue
+
+            is_success = bool(bridge_result.get("is_success"))
+            message = str(bridge_result.get("message", "")).strip()
+
+            if is_success:
+                successful_invoice_ids.append(invoice_id)
+            else:
+                failed_results.append(f"{invoice_no}: {message or 'Logo aktarımı başarısız.'}")
+
+        if not successful_invoice_ids:
+            error_text = "\n".join(failed_results) if failed_results else "Logo'ya aktarılabilecek fatura bulunamadı."
+            QMessageBox.critical(self, "Aktarım Hatası", error_text)
+            return
+
+        connector = SattaInvoicePushConnector()
+        try:
+            connector.mark_invoices_saved(successful_invoice_ids)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Satta Güncelleme Hatası",
+                f"Logo'ya aktarılan faturalar Satta üzerinde işaretlenemedi:\n{exc}",
+            )
+            return
+
+        successful_invoice_no_set = {
+            invoice_no
+            for invoice_id, invoice_no in zip(selected_invoice_ids, selected_invoice_nos)
+            if invoice_id in successful_invoice_ids
+        }
+        self.remove_transferred_invoices_from_ui(list(successful_invoice_no_set))
+
+        success_message = f"{len(successful_invoice_ids)} fatura Logo'ya aktarıldı ve Satta üzerinde işaretlendi."
+        if failed_results:
+            success_message += "\n\nAktarılamayan faturalar:\n" + "\n".join(failed_results)
+
+        QMessageBox.information(self, "Aktarım Sonucu", success_message)
 
     def update_selected_count(self):
         selected_count = 0

@@ -9,6 +9,7 @@ from Common.path_helper import user_data_path
 
 InvoiceUiRow = Tuple[str, str, str, str, str, str, str, str]
 InvoiceDetailRow = Tuple[str, str, str, str, str, str]
+InvoiceRawMap = Dict[int, Dict[str, Any]]
 
 
 ## TODO: Dinamik buton adları hazırlanacak 
@@ -26,13 +27,14 @@ class SattaInvoiceConnector:
     def __init__(self, config: Optional[SattaInvoiceConfig] = None):
         self.config = config or SattaInvoiceConfig()
 
-    def get_invoices_for_ui(self) -> Tuple[List[InvoiceUiRow], Dict[str, List[InvoiceDetailRow]], Dict[str, int]]:
+    def get_invoices_for_ui(self) -> Tuple[List[InvoiceUiRow], Dict[str, List[InvoiceDetailRow]], Dict[str, int], InvoiceRawMap]:
         response = self._read_invoice_response()
         invoices = response.get("invoices", [])
 
         invoice_rows: List[InvoiceUiRow] = []
         invoice_details: Dict[str, List[InvoiceDetailRow]] = {}
         invoice_id_map: Dict[str, int] = {}
+        invoice_raw_map: InvoiceRawMap = {}
 
         for invoice in invoices:
             if not isinstance(invoice, dict):
@@ -44,8 +46,9 @@ class SattaInvoiceConnector:
             invoice_id = self._normalize_invoice_id(invoice.get("invoice_id"))
             if invoice_id is not None:
                 invoice_id_map[invoice_row[0]] = invoice_id
+                invoice_raw_map[invoice_id] = dict(invoice)
 
-        return invoice_rows, invoice_details, invoice_id_map
+        return invoice_rows, invoice_details, invoice_id_map, invoice_raw_map
 
     def ensure_token(self, force_refresh: bool = False) -> str:
         if not force_refresh:

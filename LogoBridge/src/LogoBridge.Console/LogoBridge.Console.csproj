@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>LogoBridge.Console</RootNamespace>
+    <AssemblyName>LogoBridge.Console</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Platforms>x86</Platforms>
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>true</Prefer32Bit>
+  </PropertyGroup>
+
+  <!--
+    UnityObjects Library referansını Visual Studio üzerinden ekle:
+    Project > Add Reference > COM > UnityObjects Library
+
+    Not:
+    COM referansı çoğu ortamda .csproj içine elle değil, Logo Objects ilgili makinede
+    register edildikten sonra Visual Studio üzerinden eklenmelidir.
+  -->
+  <ItemGroup>
+    <None Include="..\..\contracts\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>
