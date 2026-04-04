@@ -3,7 +3,6 @@ from openpyxl import load_workbook
 from Common.qt_compat import Qt
 from Common.qt_compat import (
     QAbstractItemView,
-    QCheckBox,
     QFileDialog,
     QHeaderView,
     QHBoxLayout,
@@ -39,17 +38,17 @@ class SupplierSendTab(QWidget):
         self.template_button = QPushButton("Tedarikçi Şablonunu İndir")
         self.import_template_button = QPushButton("Şablondan Tedarikçi Yükle")
         self.send_button = QPushButton("Seçili Tedarikçileri Satta'ya Gönder")
-        self.edit_table_checkbox = QCheckBox("Tabloyu düzenlenebilir yap")
-        self.edit_table_checkbox.toggled.connect(self.toggle_table_edit_mode)
+        self.edit_selected_button = QPushButton("Seçili Satırları Düzenle")
         self.load_button.clicked.connect(self.load_suppliers)
         self.template_button.clicked.connect(self.download_supplier_template)
         self.import_template_button.clicked.connect(self.import_suppliers_from_template)
         self.send_button.clicked.connect(self.send_selected_suppliers)
+        self.edit_selected_button.clicked.connect(self.enable_selected_rows_editing)
         title_row.addWidget(self.load_button)
         title_row.addWidget(self.template_button)
         title_row.addWidget(self.import_template_button)
         title_row.addWidget(self.send_button)
-        title_row.addWidget(self.edit_table_checkbox)
+        title_row.addWidget(self.edit_selected_button)
         root_layout.addLayout(title_row)
 
         self.search_input = QLineEdit()
@@ -78,6 +77,7 @@ class SupplierSendTab(QWidget):
             "Vergi No",
         ])
         self.supplier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.supplier_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
         supplier_header = self.supplier_table.horizontalHeader()
         supplier_header.setSectionResizeMode(QHeaderView.Interactive)
@@ -101,8 +101,12 @@ class SupplierSendTab(QWidget):
         root_layout.addLayout(status_info_layout)
 
         self.all_suppliers = []
+        self.editable_supplier_codes = set()
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
+        self.supplier_table.itemSelectionChanged.connect(self.update_edit_button_text)
+        self.supplier_table.itemChanged.connect(self.handle_table_item_changed)
+        self.update_edit_button_text()
 
     def download_supplier_template(self):
         template_path = project_path("Templates", "supplierTemplate.xlsx")
@@ -163,10 +167,10 @@ class SupplierSendTab(QWidget):
             return []
 
     def apply_supplier_data(self, rows):
-        self.all_suppliers = rows
+        self.all_suppliers = [tuple(str(value) if value is not None else "" for value in row) for row in rows]
 
         try:
-            self.supplier_table.itemChanged.disconnect(self.update_selected_count)
+            self.supplier_table.itemChanged.disconnect(self.handle_table_item_changed)
         except RuntimeError:
             pass
         except TypeError:
@@ -180,8 +184,9 @@ class SupplierSendTab(QWidget):
             self.supplier_table.blockSignals(False)
             self.supplier_table.setUpdatesEnabled(True)
 
-        self.supplier_table.itemChanged.connect(self.update_selected_count)
+        self.supplier_table.itemChanged.connect(self.handle_table_item_changed)
         self.update_status_summary()
+        self.update_edit_button_text()
 
         if self.supplier_table.rowCount() > 0:
             self.supplier_table.selectRow(0)
@@ -192,7 +197,15 @@ class SupplierSendTab(QWidget):
 
     def populate_supplier_table(self, rows):
         self.supplier_table.setRowCount(0)
+
         for row_data in rows:
+            normalized_row = [str(value) if value is not None else "" for value in row_data[:6]]
+            while len(normalized_row) < 6:
+                normalized_row.append("")
+
+            supplier_code = normalized_row[0].strip()
+            is_row_editable = supplier_code in self.editable_supplier_codes
+
             row_index = self.supplier_table.rowCount()
             self.supplier_table.insertRow(row_index)
 
@@ -202,11 +215,86 @@ class SupplierSendTab(QWidget):
             select_item.setText("")
             self.supplier_table.setItem(row_index, 0, select_item)
 
-            for col_index, value in enumerate(row_data, start=1):
+            for col_index, value in enumerate(normalized_row, start=1):
                 item = QTableWidgetItem(value)
-                if not self.edit_table_checkbox.isChecked() or col_index == 1:
+
+                if col_index == 1:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                elif is_row_editable:
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
+                else:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
                 self.supplier_table.setItem(row_index, col_index, item)
+
+    def get_selected_row_indexes(self):
+        return sorted(index.row() for index in self.supplier_table.selectionModel().selectedRows())
+
+    def update_edit_button_text(self):
+        selected_count = len(self.get_selected_row_indexes())
+        if selected_count == 1:
+            self.edit_selected_button.setText("Seçili Satırı Düzenle")
+        else:
+            self.edit_selected_button.setText("Seçili Satırları Düzenle")
+
+    def enable_selected_rows_editing(self):
+        selected_rows = self.get_selected_row_indexes()
+        if not selected_rows:
+            QMessageBox.warning(self, "Satır Seçilmedi", "Önce düzenlemek istediğin satırı veya satırları seç.")
+            return
+
+        self.supplier_table.setEditTriggers(
+            QAbstractItemView.DoubleClicked
+            | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.SelectedClicked
+        )
+
+        for row in selected_rows:
+            code_item = self.supplier_table.item(row, 1)
+            supplier_code = code_item.text().strip() if code_item else ""
+            if supplier_code:
+                self.editable_supplier_codes.add(supplier_code)
+
+            for col in range(2, self.supplier_table.columnCount()):
+                item = self.supplier_table.item(row, col)
+                if item is None:
+                    continue
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
+
+    def handle_table_item_changed(self, item):
+        if item is None:
+            return
+
+        if item.column() == 0:
+            self.update_selected_count()
+            return
+
+        if item.column() == 1:
+            return
+
+        code_item = self.supplier_table.item(item.row(), 1)
+        supplier_code = code_item.text().strip() if code_item else ""
+
+        if not supplier_code:
+            self.update_selected_count()
+            return
+
+        data_index = item.column() - 1
+
+        updated_rows = []
+        for row_data in self.all_suppliers:
+            normalized_row = list(row_data[:6])
+            while len(normalized_row) < 6:
+                normalized_row.append("")
+
+            if str(normalized_row[0]).strip() == supplier_code:
+                normalized_row[data_index] = item.text().strip()
+                updated_rows.append(tuple(normalized_row))
+            else:
+                updated_rows.append(tuple(normalized_row))
+
+        self.all_suppliers = updated_rows
+        self.update_selected_count()
 
     def filter_suppliers(self, *_args, show_no_results_message=False):
         search_text = self.search_input.text().strip().lower()
@@ -333,26 +421,6 @@ class SupplierSendTab(QWidget):
     def update_status_summary(self):
         self.update_selected_count()
 
-    def toggle_table_edit_mode(self, checked):
-        if checked:
-            self.supplier_table.setEditTriggers(
-                QAbstractItemView.DoubleClicked
-                | QAbstractItemView.EditKeyPressed
-                | QAbstractItemView.SelectedClicked
-            )
-        else:
-            self.supplier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-
-        for row in range(self.supplier_table.rowCount()):
-            for col in range(1, self.supplier_table.columnCount()):
-                item = self.supplier_table.item(row, col)
-                if item is None:
-                    continue
-
-                if checked and col != 1:
-                    item.setFlags(item.flags() | Qt.ItemIsEditable)
-                else:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
     def normalize_header(self, value):
         normalized_text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())

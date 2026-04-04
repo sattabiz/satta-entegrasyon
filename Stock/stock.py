@@ -3,7 +3,6 @@ from Common.qt_compat import Qt
 from Common.path_helper import user_data_path
 from Common.qt_compat import (
     QAbstractItemView,
-    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -85,12 +84,11 @@ class StockTab(QWidget):
         self.load_button = QPushButton("Masraf Merkezi ve Kategorileri Al")
         self.load_products_button = QPushButton("Ürünleri Al")
         self.transfer_button = QPushButton("Seçili Ürünleri Satta'ya Gönder")
-        self.edit_table_checkbox = QCheckBox("Tabloyu düzenlenebilir yap")
-        self.edit_table_checkbox.toggled.connect(self.toggle_table_edit_mode)
+        self.edit_selected_button = QPushButton("Seçili Satırları Düzenle")
         title_row.addWidget(self.load_button)
         title_row.addWidget(self.load_products_button)
         title_row.addWidget(self.transfer_button)
-        title_row.addWidget(self.edit_table_checkbox)
+        title_row.addWidget(self.edit_selected_button)
         root_layout.addLayout(title_row)
         root_layout.addLayout(search_row)
 
@@ -112,7 +110,7 @@ class StockTab(QWidget):
             "Durum",
         ])
         self.stock_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.stock_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.stock_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.stock_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.stock_table.setColumnWidth(0, 36)
         self.stock_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -134,11 +132,16 @@ class StockTab(QWidget):
         root_layout.addLayout(status_info_layout)
 
         self.all_products = []
+        self.editable_product_codes = set()
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.load_button.clicked.connect(self.load_cost_centers_and_categories)
         self.load_products_button.clicked.connect(self.load_products)
         self.transfer_button.clicked.connect(self.transfer_selected_products)
+        self.edit_selected_button.clicked.connect(self.enable_selected_rows_editing)
+        self.stock_table.itemSelectionChanged.connect(self.update_edit_button_text)
+        self.stock_table.itemChanged.connect(self.handle_table_item_changed)
+        self.update_edit_button_text()
 
         self.load_sample_data()
 
@@ -171,14 +174,13 @@ class StockTab(QWidget):
             QMessageBox.critical(self, "Logo Hatası", f"Ürünler alınamadı:\n{exc}")
             return
 
-        self.edit_table_checkbox.setChecked(False)
         self.apply_product_data(products)
 
     def apply_product_data(self, rows):
-        self.all_products = rows
+        self.all_products = [tuple(str(value) if value is not None else "" for value in row) for row in rows]
 
         try:
-            self.stock_table.itemChanged.disconnect(self.update_selected_count)
+            self.stock_table.itemChanged.disconnect(self.handle_table_item_changed)
         except RuntimeError:
             pass
         except TypeError:
@@ -192,8 +194,9 @@ class StockTab(QWidget):
             self.stock_table.blockSignals(False)
             self.stock_table.setUpdatesEnabled(True)
 
-        self.stock_table.itemChanged.connect(self.update_selected_count)
+        self.stock_table.itemChanged.connect(self.handle_table_item_changed)
         self.update_status_summary()
+        self.update_edit_button_text()
 
         if self.stock_table.rowCount() > 0:
             self.stock_table.selectRow(0)
@@ -273,6 +276,9 @@ class StockTab(QWidget):
         self.stock_table.setRowCount(0)
         for raw_row_data in rows:
             row_data = self.normalize_table_row(raw_row_data)
+            product_code = row_data[0].strip()
+            is_row_editable = product_code in self.editable_product_codes
+
             row_index = self.stock_table.rowCount()
             self.stock_table.insertRow(row_index)
 
@@ -284,9 +290,79 @@ class StockTab(QWidget):
 
             for col_index, value in enumerate(row_data, start=1):
                 item = QTableWidgetItem(value)
-                if not self.edit_table_checkbox.isChecked() or col_index == 1:
+                if col_index == 1:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                elif is_row_editable:
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
+                else:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.stock_table.setItem(row_index, col_index, item)
+
+    def get_selected_row_indexes(self):
+        return sorted(index.row() for index in self.stock_table.selectionModel().selectedRows())
+
+    def update_edit_button_text(self):
+        selected_count = len(self.get_selected_row_indexes())
+        if selected_count == 1:
+            self.edit_selected_button.setText("Seçili Satırı Düzenle")
+        else:
+            self.edit_selected_button.setText("Seçili Satırları Düzenle")
+
+    def enable_selected_rows_editing(self):
+        selected_rows = self.get_selected_row_indexes()
+        if not selected_rows:
+            QMessageBox.warning(self, "Satır Seçilmedi", "Önce düzenlemek istediğin satırı veya satırları seç.")
+            return
+
+        self.stock_table.setEditTriggers(
+            QAbstractItemView.DoubleClicked
+            | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.SelectedClicked
+        )
+
+        for row in selected_rows:
+            code_item = self.stock_table.item(row, 1)
+            product_code = code_item.text().strip() if code_item else ""
+            if product_code:
+                self.editable_product_codes.add(product_code)
+
+            for col in range(2, self.stock_table.columnCount()):
+                item = self.stock_table.item(row, col)
+                if item is None:
+                    continue
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
+
+    def handle_table_item_changed(self, item):
+        if item is None:
+            return
+
+        if item.column() == 0:
+            self.update_selected_count()
+            return
+
+        if item.column() == 1:
+            return
+
+        code_item = self.stock_table.item(item.row(), 1)
+        product_code = code_item.text().strip() if code_item else ""
+
+        if not product_code:
+            self.update_selected_count()
+            return
+
+        data_index = item.column() - 1
+
+        updated_rows = []
+        for row_data in self.all_products:
+            normalized_row = list(self.normalize_table_row(row_data))
+            if str(normalized_row[0]).strip() == product_code:
+                normalized_row[data_index] = item.text().strip()
+                updated_rows.append(tuple(normalized_row))
+            else:
+                updated_rows.append(tuple(normalized_row))
+
+        self.all_products = updated_rows
+        self.update_selected_count()
 
     def filter_products(self, *_args, show_no_results_message=False):
         search_text = self.search_input.text().strip().lower()
@@ -435,23 +511,3 @@ class StockTab(QWidget):
         self.waiting_info_label.setText(f"Bekliyor durumundaki ürün sayısı: {waiting_count}")
         self.error_info_label.setText(f"Hata durumundaki ürün sayısı: {error_count}")
 
-    def toggle_table_edit_mode(self, checked):
-        if checked:
-            self.stock_table.setEditTriggers(
-                QAbstractItemView.DoubleClicked
-                | QAbstractItemView.EditKeyPressed
-                | QAbstractItemView.SelectedClicked
-            )
-        else:
-            self.stock_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-
-        for row in range(self.stock_table.rowCount()):
-            for col in range(1, self.stock_table.columnCount()):
-                item = self.stock_table.item(row, col)
-                if item is None:
-                    continue
-
-                if checked and col != 1:
-                    item.setFlags(item.flags() | Qt.ItemIsEditable)
-                else:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
