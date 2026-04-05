@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 using LogoBridge.Console.Models;
 
 namespace LogoBridge.Console.Services;
@@ -16,6 +17,8 @@ public sealed class LogoObjectService
 
     public BridgeResult TransferPurchaseInvoice(InvoicePayload payload)
     {
+        object? unityApplication = null;
+
         try
         {
             if (payload is null)
@@ -39,14 +42,54 @@ public sealed class LogoObjectService
             var headerFields = _invoiceMapper.MapHeaderFields(payload);
             var transactionLines = _invoiceMapper.MapTransactionLines(payload);
 
-            var result = BridgeResult.Failure(
-                message: "Logo Objects entegrasyon katmanı henüz gerçek bağlantı ile tamamlanmadı.",
-                errorCode: "LOGO_OBJECTS_NOT_IMPLEMENTED");
+            unityApplication = CreateUnityApplication();
+            var connectSucceeded = CallBooleanMethod(unityApplication, "Connect");
+            if (!connectSucceeded)
+            {
+                return BuildLogoFailureResult(
+                    unityApplication,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Logo Objects Connect başarısız oldu.",
+                    "LOGO_CONNECT_FAILED");
+            }
+
+            var userLoginSucceeded = TryUserLogin(unityApplication, payload);
+            if (!userLoginSucceeded)
+            {
+                return BuildLogoFailureResult(
+                    unityApplication,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Logo kullanıcı girişi başarısız oldu.",
+                    "LOGO_USER_LOGIN_FAILED");
+            }
+
+            var companyLoginSucceeded = TryCompanyLogin(unityApplication, payload);
+            if (!companyLoginSucceeded)
+            {
+                return BuildLogoFailureResult(
+                    unityApplication,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Logo firma girişi başarısız oldu.",
+                    "LOGO_COMPANY_LOGIN_FAILED");
+            }
+
+            var result = BridgeResult.Success(
+                message: "Logo Objects bağlantısı, kullanıcı girişi ve firma girişi başarılı. Fatura Post akışı henüz eklenmedi.",
+                invoiceNumber: payload.InvoiceNumber,
+                documentNumber: payload.DocumentNumber,
+                arpCode: payload.ArpCode);
 
             AppendPayloadSummary(result, payload);
             AppendMappedHeaderSummary(result, headerFields);
             AppendMappedLineSummary(result, transactionLines);
-            result.Warnings.Add("UnityObjects / Logo Objects referansı ve gerçek Post akışı henüz eklenmedi.");
+            AppendLogoRuntimeDetails(result, unityApplication);
+            result.Warnings.Add("Purchase invoice object oluşturma ve Post akışı henüz eklenmedi.");
 
             return result;
         }
@@ -58,6 +101,251 @@ public sealed class LogoObjectService
             result.Details["exception_type"] = exception.GetType().Name;
             return result;
         }
+        finally
+        {
+            SafeLogoutAndDisconnect(unityApplication);
+        }
+    }
+
+    private object CreateUnityApplication()
+    {
+        var candidateProgIds = new[]
+        {
+            "UnityObjects.UnityApplication",
+            "UnityObjects.Application",
+        };
+
+        foreach (var progId in candidateProgIds)
+        {
+            var comType = Type.GetTypeFromProgID(progId, throwOnError: false);
+            if (comType is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                var instance = Activator.CreateInstance(comType);
+                if (instance is not null)
+                {
+                    return instance;
+                }
+            }
+            catch
+            {
+                // Bir sonraki ProgID adayı denenecek.
+            }
+        }
+
+        throw new InvalidOperationException(
+            "UnityObjects COM nesnesi oluşturulamadı. LOBJECTS register edilmiş mi kontrol et.");
+    }
+
+    private bool TryUserLogin(object unityApplication, InvoicePayload payload)
+    {
+        var candidateArgumentSets = new List<object[]>
+        {
+            new object[] { payload.LogoUser, payload.LogoPassword },
+            new object[] { payload.LogoUser, payload.LogoPassword, payload.FirmNo },
+            new object[] { payload.LogoUser, payload.LogoPassword, payload.FirmNo, payload.PeriodNo },
+        };
+
+        foreach (var args in candidateArgumentSets)
+        {
+            var invocationResult = TryInvokeMethod(unityApplication, "UserLogin", args);
+            if (invocationResult.MethodFound && invocationResult.Success)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryCompanyLogin(object unityApplication, InvoicePayload payload)
+    {
+        var candidateArgumentSets = new List<object[]>
+        {
+            new object[] { payload.FirmNo },
+            new object[] { payload.FirmNo, payload.PeriodNo },
+            new object[] { payload.FirmNo, payload.PeriodNo, payload.LogoWorkingYear },
+            new object[] { payload.LogoCompanyCode },
+            new object[] { payload.LogoCompanyCode, payload.PeriodNo },
+        };
+
+        foreach (var args in candidateArgumentSets)
+        {
+            var invocationResult = TryInvokeMethod(unityApplication, "CompanyLogin", args);
+            if (invocationResult.MethodFound && invocationResult.Success)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private BridgeResult BuildLogoFailureResult(
+        object unityApplication,
+        InvoicePayload payload,
+        Dictionary<string, string> headerFields,
+        List<Dictionary<string, string>> transactionLines,
+        string message,
+        string errorCode)
+    {
+        var result = BridgeResult.Failure(message: message, errorCode: errorCode);
+        AppendPayloadSummary(result, payload);
+        AppendMappedHeaderSummary(result, headerFields);
+        AppendMappedLineSummary(result, transactionLines);
+        AppendLogoRuntimeDetails(result, unityApplication);
+        return result;
+    }
+
+    private void AppendLogoRuntimeDetails(BridgeResult result, object unityApplication)
+    {
+        result.Details["logo_last_error"] = ReadPossibleStringPropertyOrMethod(
+            unityApplication,
+            "GetLastErrorString",
+            "LastErrorString",
+            "ErrorDesc",
+            "ErrorDescription");
+
+        result.Details["logo_last_error_code"] = ReadPossibleStringPropertyOrMethod(
+            unityApplication,
+            "GetLastError",
+            "LastError",
+            "ErrorCode");
+
+        result.Details["logo_db_error"] = ReadPossibleStringPropertyOrMethod(
+            unityApplication,
+            "GetLastDBObjectError",
+            "LastDBObjectError");
+    }
+
+    private string ReadPossibleStringPropertyOrMethod(object target, params string[] memberNames)
+    {
+        foreach (var memberName in memberNames)
+        {
+            try
+            {
+                var method = target.GetType().GetMethod(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (method is not null && method.GetParameters().Length == 0)
+                {
+                    var methodResult = method.Invoke(target, null);
+                    if (methodResult is not null)
+                    {
+                        return Convert.ToString(methodResult, CultureInfo.InvariantCulture) ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+
+            try
+            {
+                var property = target.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (property is not null)
+                {
+                    var propertyValue = property.GetValue(target);
+                    if (propertyValue is not null)
+                    {
+                        return Convert.ToString(propertyValue, CultureInfo.InvariantCulture) ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private bool CallBooleanMethod(object target, string methodName)
+    {
+        var invocationResult = TryInvokeMethod(target, methodName, Array.Empty<object>());
+        return invocationResult.MethodFound && invocationResult.Success;
+    }
+
+    private (bool MethodFound, bool Success) TryInvokeMethod(object target, string methodName, params object[] args)
+    {
+        try
+        {
+            var result = target.GetType().InvokeMember(
+                methodName,
+                BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance,
+                binder: null,
+                target: target,
+                args: args);
+
+            return (true, CoerceInvocationResultToSuccess(result));
+        }
+        catch (MissingMethodException)
+        {
+            return (false, false);
+        }
+        catch (TargetInvocationException)
+        {
+            return (true, false);
+        }
+        catch
+        {
+            return (true, false);
+        }
+    }
+
+    private bool CoerceInvocationResultToSuccess(object? result)
+    {
+        if (result is null)
+        {
+            return true;
+        }
+
+        if (result is bool boolResult)
+        {
+            return boolResult;
+        }
+
+        if (result is int intResult)
+        {
+            return intResult != 0;
+        }
+
+        if (result is short shortResult)
+        {
+            return shortResult != 0;
+        }
+
+        if (result is string stringResult)
+        {
+            return !string.IsNullOrWhiteSpace(stringResult)
+                   && !string.Equals(stringResult, "0", StringComparison.OrdinalIgnoreCase)
+                   && !string.Equals(stringResult, "false", StringComparison.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            return Convert.ToInt32(result, CultureInfo.InvariantCulture) != 0;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    private void SafeLogoutAndDisconnect(object? unityApplication)
+    {
+        if (unityApplication is null)
+        {
+            return;
+        }
+
+        TryInvokeMethod(unityApplication, "CompanyLogout", Array.Empty<object>());
+        TryInvokeMethod(unityApplication, "UserLogout", Array.Empty<object>());
+        TryInvokeMethod(unityApplication, "Disconnect", Array.Empty<object>());
     }
 
     private void AppendPayloadSummary(BridgeResult result, InvoicePayload payload)
