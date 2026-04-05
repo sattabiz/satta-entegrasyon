@@ -75,6 +75,6 @@ internal static class Program
         };
 
         var jsonOutput = JsonSerializer.Serialize(result, serializerOptions);
-        Console.WriteLine(jsonOutput);
+        global::System.Console.WriteLine(jsonOutput);
     }
 }
