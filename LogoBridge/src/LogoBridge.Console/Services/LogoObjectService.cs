@@ -1,6 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using LogoBridge.Console.Models;
 
@@ -18,6 +20,7 @@ public sealed class LogoObjectService
     public BridgeResult TransferPurchaseInvoice(InvoicePayload payload)
     {
         object? unityApplication = null;
+        object? invoiceDataObject = null;
 
         try
         {
@@ -48,6 +51,7 @@ public sealed class LogoObjectService
             {
                 return BuildLogoFailureResult(
                     unityApplication,
+                    invoiceDataObject,
                     payload,
                     headerFields,
                     transactionLines,
@@ -60,6 +64,7 @@ public sealed class LogoObjectService
             {
                 return BuildLogoFailureResult(
                     unityApplication,
+                    invoiceDataObject,
                     payload,
                     headerFields,
                     transactionLines,
@@ -72,6 +77,7 @@ public sealed class LogoObjectService
             {
                 return BuildLogoFailureResult(
                     unityApplication,
+                    invoiceDataObject,
                     payload,
                     headerFields,
                     transactionLines,
@@ -79,19 +85,84 @@ public sealed class LogoObjectService
                     "LOGO_COMPANY_LOGIN_FAILED");
             }
 
-            var result = BridgeResult.Success(
-                message: "Logo Objects bağlantısı, kullanıcı girişi ve firma girişi başarılı. Fatura Post akışı henüz eklenmedi.",
+            var creationResult = TryCreatePurchaseInvoiceDataObject(unityApplication);
+            invoiceDataObject = creationResult.DataObject;
+            if (invoiceDataObject is null)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    invoiceDataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Satınalma faturası data object oluşturulamadı.",
+                    "LOGO_DATA_OBJECT_CREATE_FAILED");
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                result.Details["unity_available_members"] = string.Join(", ", GetPublicMemberNames(unityApplication));
+                return result;
+            }
+
+            var headerMappingSucceeded = TryMapHeaderFields(invoiceDataObject, headerFields, out var headerError);
+            if (!headerMappingSucceeded)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    invoiceDataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Fatura üst bilgi alanları Logo data object üzerine yazılamadı.",
+                    "LOGO_HEADER_MAPPING_FAILED");
+                result.Details["header_mapping_error"] = headerError;
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            var lineMappingSucceeded = TryMapTransactionLines(invoiceDataObject, transactionLines, out var lineError);
+            if (!lineMappingSucceeded)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    invoiceDataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Fatura satırları Logo data object üzerine yazılamadı.",
+                    "LOGO_LINE_MAPPING_FAILED");
+                result.Details["line_mapping_error"] = lineError;
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            var postSucceeded = TryPostDataObject(invoiceDataObject);
+            if (!postSucceeded)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    invoiceDataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Satınalma faturası Logo'ya kaydedilemedi.",
+                    "LOGO_POST_FAILED");
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            var resultSuccess = BridgeResult.Success(
+                message: "Satınalma faturası Logo'ya başarıyla kaydedildi.",
+                logicalRef: ReadPossibleIntPropertyOrMethod(invoiceDataObject, "LogicalRef", "InternalReference", "GetInternalReference"),
                 invoiceNumber: payload.InvoiceNumber,
                 documentNumber: payload.DocumentNumber,
                 arpCode: payload.ArpCode);
 
-            AppendPayloadSummary(result, payload);
-            AppendMappedHeaderSummary(result, headerFields);
-            AppendMappedLineSummary(result, transactionLines);
-            AppendLogoRuntimeDetails(result, unityApplication);
-            result.Warnings.Add("Purchase invoice object oluşturma ve Post akışı henüz eklenmedi.");
+            AppendPayloadSummary(resultSuccess, payload);
+            AppendMappedHeaderSummary(resultSuccess, headerFields);
+            AppendMappedLineSummary(resultSuccess, transactionLines);
+            AppendLogoRuntimeDetails(resultSuccess, unityApplication, invoiceDataObject);
+            resultSuccess.Details["data_object_create_strategy"] = creationResult.Strategy;
 
-            return result;
+            return resultSuccess;
         }
         catch (Exception exception)
         {
@@ -148,11 +219,27 @@ public sealed class LogoObjectService
             new object[] { payload.LogoUser, payload.LogoPassword },
             new object[] { payload.LogoUser, payload.LogoPassword, payload.FirmNo },
             new object[] { payload.LogoUser, payload.LogoPassword, payload.FirmNo, payload.PeriodNo },
+            new object[] { payload.LogoUser, payload.LogoPassword, payload.FirmNo, 0 },
         };
 
         foreach (var args in candidateArgumentSets)
         {
             var invocationResult = TryInvokeMethod(unityApplication, "UserLogin", args);
+            if (invocationResult.MethodFound && invocationResult.Success)
+            {
+                return true;
+            }
+        }
+
+        var combinedLoginArgumentSets = new List<object[]>
+        {
+            new object[] { payload.LogoUser, payload.LogoPassword, payload.FirmNo, 0 },
+            new object[] { payload.LogoUser, payload.LogoPassword, payload.FirmNo, payload.PeriodNo },
+        };
+
+        foreach (var args in combinedLoginArgumentSets)
+        {
+            var invocationResult = TryInvokeMethod(unityApplication, "Login", args);
             if (invocationResult.MethodFound && invocationResult.Success)
             {
                 return true;
@@ -182,11 +269,193 @@ public sealed class LogoObjectService
             }
         }
 
-        return false;
+        return true;
+    }
+
+    private (object? DataObject, string Strategy) TryCreatePurchaseInvoiceDataObject(object unityApplication)
+    {
+        var candidateStrategies = new List<(string MethodName, object[] Args, string StrategyName)>
+        {
+            ("NewDataObject", new object[] { "doPurchInvoice" }, "NewDataObject(doPurchInvoice)"),
+            ("NewDataObject", new object[] { "purchaseInvoice" }, "NewDataObject(purchaseInvoice)"),
+            ("NewDataObject", new object[] { "PurchInvoice" }, "NewDataObject(PurchInvoice)"),
+            ("NewDataObject", new object[] { 1 }, "NewDataObject(1)"),
+            ("NewDataObject", new object[] { 8 }, "NewDataObject(8)"),
+            ("GetDataObject", new object[] { "doPurchInvoice" }, "GetDataObject(doPurchInvoice)"),
+            ("GetDataObject", new object[] { "purchaseInvoice" }, "GetDataObject(purchaseInvoice)"),
+            ("CreateDataObject", new object[] { "doPurchInvoice" }, "CreateDataObject(doPurchInvoice)"),
+            ("CreateDataObject", new object[] { "purchaseInvoice" }, "CreateDataObject(purchaseInvoice)"),
+        };
+
+        foreach (var candidate in candidateStrategies)
+        {
+            var invocation = TryInvokeMethodForObject(unityApplication, candidate.MethodName, candidate.Args);
+            if (invocation.MethodFound && invocation.Success && invocation.ReturnValue is not null)
+            {
+                return (invocation.ReturnValue, candidate.StrategyName);
+            }
+        }
+
+        return (null, string.Empty);
+    }
+
+    private bool TryMapHeaderFields(object invoiceDataObject, Dictionary<string, string> headerFields, out string errorMessage)
+    {
+        foreach (var field in headerFields)
+        {
+            var setSucceeded = TrySetFieldValue(invoiceDataObject, field.Key, field.Value);
+            if (!setSucceeded)
+            {
+                errorMessage = $"Header alanı yazılamadı: {field.Key}";
+                return false;
+            }
+        }
+
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    private bool TryMapTransactionLines(object invoiceDataObject, List<Dictionary<string, string>> transactionLines, out string errorMessage)
+    {
+        if (transactionLines.Count == 0)
+        {
+            errorMessage = string.Empty;
+            return true;
+        }
+
+        var transactionsField = TryGetFieldObject(invoiceDataObject, "TRANSACTIONS");
+        if (transactionsField is null)
+        {
+            errorMessage = "TRANSACTIONS alanı bulunamadı.";
+            return false;
+        }
+
+        var linesContainer = TryGetLinesContainer(transactionsField);
+        if (linesContainer is null)
+        {
+            errorMessage = "TRANSACTIONS satır koleksiyonu bulunamadı.";
+            return false;
+        }
+
+        for (var i = 0; i < transactionLines.Count; i++)
+        {
+            var appendResult = TryAppendLine(linesContainer);
+            if (!appendResult.Success || appendResult.LineObject is null)
+            {
+                errorMessage = $"{i + 1}. satır için yeni transaction line oluşturulamadı.";
+                return false;
+            }
+
+            foreach (var field in transactionLines[i])
+            {
+                var setSucceeded = TrySetFieldValue(appendResult.LineObject, field.Key, field.Value);
+                if (!setSucceeded)
+                {
+                    errorMessage = $"{i + 1}. satır alanı yazılamadı: {field.Key}";
+                    return false;
+                }
+            }
+        }
+
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    private bool TryPostDataObject(object invoiceDataObject)
+    {
+        var invocationResult = TryInvokeMethod(invoiceDataObject, "Post", Array.Empty<object>());
+        if (invocationResult.MethodFound)
+        {
+            return invocationResult.Success;
+        }
+
+        invocationResult = TryInvokeMethod(invoiceDataObject, "Save", Array.Empty<object>());
+        return invocationResult.MethodFound && invocationResult.Success;
+    }
+
+    private object? TryGetFieldObject(object target, string fieldName)
+    {
+        var fieldsContainer = TryGetMemberValue(target, "DataFields", "Fields");
+        if (fieldsContainer is null)
+        {
+            return null;
+        }
+
+        var byNameCandidates = new[]
+        {
+            new { Method = "FieldByName", Args = new object[] { fieldName } },
+            new { Method = "Item", Args = new object[] { fieldName } },
+            new { Method = "get_Item", Args = new object[] { fieldName } },
+        };
+
+        foreach (var candidate in byNameCandidates)
+        {
+            var invocation = TryInvokeMethodForObject(fieldsContainer, candidate.Method, candidate.Args);
+            if (invocation.MethodFound && invocation.Success && invocation.ReturnValue is not null)
+            {
+                return invocation.ReturnValue;
+            }
+        }
+
+        return null;
+    }
+
+    private bool TrySetFieldValue(object target, string fieldName, string value)
+    {
+        var fieldObject = TryGetFieldObject(target, fieldName);
+        if (fieldObject is null)
+        {
+            return false;
+        }
+
+        if (TrySetMemberValue(fieldObject, "Value", value))
+        {
+            return true;
+        }
+
+        var assignInvocation = TryInvokeMethod(fieldObject, "Assign", value);
+        return assignInvocation.MethodFound && assignInvocation.Success;
+    }
+
+    private object? TryGetLinesContainer(object transactionsField)
+    {
+        return TryGetMemberValue(transactionsField, "Lines", "LineCollection", "Items");
+    }
+
+    private (bool Success, object? LineObject) TryAppendLine(object linesContainer)
+    {
+        var appendCandidates = new[]
+        {
+            "AppendLine",
+            "AddLine",
+            "Append",
+            "Add",
+        };
+
+        foreach (var methodName in appendCandidates)
+        {
+            var invocation = TryInvokeMethodForObject(linesContainer, methodName, Array.Empty<object>());
+            if (invocation.MethodFound && invocation.Success)
+            {
+                if (invocation.ReturnValue is not null)
+                {
+                    return (true, invocation.ReturnValue);
+                }
+
+                var currentLine = TryGetMemberValue(linesContainer, "LastLine", "CurrentLine", "ActiveLine");
+                if (currentLine is not null)
+                {
+                    return (true, currentLine);
+                }
+            }
+        }
+
+        return (false, null);
     }
 
     private BridgeResult BuildLogoFailureResult(
         object unityApplication,
+        object? invoiceDataObject,
         InvoicePayload payload,
         Dictionary<string, string> headerFields,
         List<Dictionary<string, string>> transactionLines,
@@ -197,11 +466,11 @@ public sealed class LogoObjectService
         AppendPayloadSummary(result, payload);
         AppendMappedHeaderSummary(result, headerFields);
         AppendMappedLineSummary(result, transactionLines);
-        AppendLogoRuntimeDetails(result, unityApplication);
+        AppendLogoRuntimeDetails(result, unityApplication, invoiceDataObject);
         return result;
     }
 
-    private void AppendLogoRuntimeDetails(BridgeResult result, object unityApplication)
+    private void AppendLogoRuntimeDetails(BridgeResult result, object unityApplication, object? invoiceDataObject)
     {
         result.Details["logo_last_error"] = ReadPossibleStringPropertyOrMethod(
             unityApplication,
@@ -220,6 +489,18 @@ public sealed class LogoObjectService
             unityApplication,
             "GetLastDBObjectError",
             "LastDBObjectError");
+
+        if (invoiceDataObject is not null)
+        {
+            result.Details["data_object_last_error"] = ReadPossibleStringPropertyOrMethod(
+                invoiceDataObject,
+                "GetLastErrorString",
+                "LastErrorString",
+                "ErrorDesc",
+                "ErrorDescription");
+
+            result.Details["data_object_members"] = string.Join(", ", GetPublicMemberNames(invoiceDataObject));
+        }
     }
 
     private string ReadPossibleStringPropertyOrMethod(object target, params string[] memberNames)
@@ -264,6 +545,158 @@ public sealed class LogoObjectService
         return string.Empty;
     }
 
+    private int ReadPossibleIntPropertyOrMethod(object target, params string[] memberNames)
+    {
+        foreach (var memberName in memberNames)
+        {
+            try
+            {
+                var method = target.GetType().GetMethod(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (method is not null && method.GetParameters().Length == 0)
+                {
+                    var methodResult = method.Invoke(target, null);
+                    return Convert.ToInt32(methodResult, CultureInfo.InvariantCulture);
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+
+            try
+            {
+                var property = target.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (property is not null)
+                {
+                    var propertyValue = property.GetValue(target);
+                    return Convert.ToInt32(propertyValue, CultureInfo.InvariantCulture);
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+        }
+
+        return 0;
+    }
+
+    private object? TryGetMemberValue(object target, params string[] memberNames)
+    {
+        foreach (var memberName in memberNames)
+        {
+            try
+            {
+                var property = target.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (property is not null)
+                {
+                    var propertyValue = property.GetValue(target);
+                    if (propertyValue is not null)
+                    {
+                        return propertyValue;
+                    }
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+
+            try
+            {
+                var method = target.GetType().GetMethod(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (method is not null && method.GetParameters().Length == 0)
+                {
+                    var methodValue = method.Invoke(target, null);
+                    if (methodValue is not null)
+                    {
+                        return methodValue;
+                    }
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+        }
+
+        return null;
+    }
+
+    private bool TrySetMemberValue(object target, string memberName, object? value)
+    {
+        try
+        {
+            var property = target.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+            if (property is not null && property.CanWrite)
+            {
+                var convertedValue = ConvertToPropertyType(value, property.PropertyType);
+                property.SetValue(target, convertedValue);
+                return true;
+            }
+        }
+        catch
+        {
+            // Fallback denenir.
+        }
+
+        try
+        {
+            target.GetType().InvokeMember(
+                memberName,
+                BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance,
+                binder: null,
+                target: target,
+                args: new[] { value });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private object? ConvertToPropertyType(object? value, Type propertyType)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var targetType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+        if (targetType == typeof(string))
+        {
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+        }
+
+        if (targetType == typeof(int))
+        {
+            return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(short))
+        {
+            return Convert.ToInt16(value, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(double))
+        {
+            return Convert.ToDouble(value, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(decimal))
+        {
+            return Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(bool))
+        {
+            return CoerceInvocationResultToSuccess(value);
+        }
+
+        return Convert.ChangeType(value, targetType, CultureInfo.InvariantCulture);
+    }
+
     private bool CallBooleanMethod(object target, string methodName)
     {
         var invocationResult = TryInvokeMethod(target, methodName, Array.Empty<object>());
@@ -271,6 +704,12 @@ public sealed class LogoObjectService
     }
 
     private (bool MethodFound, bool Success) TryInvokeMethod(object target, string methodName, params object[] args)
+    {
+        var invocation = TryInvokeMethodForObject(target, methodName, args);
+        return (invocation.MethodFound, invocation.Success);
+    }
+
+    private (bool MethodFound, bool Success, object? ReturnValue) TryInvokeMethodForObject(object target, string methodName, params object[] args)
     {
         try
         {
@@ -281,19 +720,19 @@ public sealed class LogoObjectService
                 target: target,
                 args: args);
 
-            return (true, CoerceInvocationResultToSuccess(result));
+            return (true, CoerceInvocationResultToSuccess(result), result);
         }
         catch (MissingMethodException)
         {
-            return (false, false);
+            return (false, false, null);
         }
         catch (TargetInvocationException)
         {
-            return (true, false);
+            return (true, false, null);
         }
         catch
         {
-            return (true, false);
+            return (true, false, null);
         }
     }
 
@@ -334,6 +773,17 @@ public sealed class LogoObjectService
         {
             return true;
         }
+    }
+
+    private IEnumerable<string> GetPublicMemberNames(object target)
+    {
+        return target.GetType()
+            .GetMembers(BindingFlags.Public | BindingFlags.Instance)
+            .Select(member => member.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Take(200)
+            .ToList();
     }
 
     private void SafeLogoutAndDisconnect(object? unityApplication)
