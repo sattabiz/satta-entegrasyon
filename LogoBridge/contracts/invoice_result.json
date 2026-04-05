@@ -1,0 +1,30 @@
+{
+  "is_success": false,
+  "message": "Logo Objects entegrasyon katmanı henüz gerçek bağlantı ile tamamlanmadı.",
+  "error_code": "LOGO_OBJECTS_NOT_IMPLEMENTED",
+  "logical_ref": 0,
+  "invoice_number": "nev10008990",
+  "document_number": "SATTA-INV-704",
+  "arp_code": "4343234234324",
+  "warnings": [
+    "UnityObjects / Logo Objects referansı ve gerçek Post akışı henüz eklenmedi."
+  ],
+  "details": {
+    "firm_no": "1",
+    "period_no": "1",
+    "invoice_type": "purchase",
+    "line_count": "2",
+    "currency_code": "TRY",
+    "warehouse_nr": "0",
+    "source_index": "0",
+    "mapped_header_count": "18",
+    "mapped_header_arp_code": "4343234234324",
+    "mapped_header_number": "nev10008990",
+    "mapped_header_date": "21.12.2024",
+    "mapped_line_count": "2",
+    "first_line_master_code": "BO03011",
+    "first_line_quantity": "100",
+    "first_line_unit_price": "1",
+    "payload_path": "C:\\Temp\\invoice_payload.json"
+  }
+}

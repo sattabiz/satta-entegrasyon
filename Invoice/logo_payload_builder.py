@@ -33,14 +33,14 @@ class LogoPayloadBuilder:
         payload = {
             "firm_no": self._to_int(self.logo_settings.get("firm_no"), default=1),
             "period_no": self._to_int(self.logo_settings.get("period_no"), default=1),
-            "logo_user": self._safe_text(self.logo_settings.get("username")),
-            "logo_password": self._safe_text(self.logo_settings.get("password")),
+            "logo_user": self._safe_text(self.logo_settings.get("logo_user")),
+            "logo_password": self._safe_text(self.logo_settings.get("logo_password")),
             "logo_company_code": self._safe_text(self.logo_settings.get("database")),
-            "logo_working_year": str(self._to_int(self.logo_settings.get("period_no"), default=1)),
+            "logo_working_year": self._resolve_logo_working_year(invoice),
             "invoice_type": "purchase",
             "document_number": invoice_no,
             "document_date": invoice_date,
-            "document_time": "00:00:00",
+            "document_time": self._resolve_document_time(invoice.get("invoice_date")),
             "arp_code": seller_erp_id,
             "invoice_number": invoice_no,
             "description": seller_name,
@@ -53,7 +53,7 @@ class LogoPayloadBuilder:
             "factory_nr": self._to_int(self.logo_settings.get("factory_nr"), default=0),
             "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=0),
             "currency_code": self._resolve_invoice_currency(invoice),
-            "exchange_rate": 0,
+            "exchange_rate": self._resolve_exchange_rate(invoice),
             "notes": self._build_notes(invoice_id, payment_date, invoice_note),
             "lines": self._build_invoice_lines(invoice),
         }
@@ -82,6 +82,8 @@ class LogoPayloadBuilder:
             vat_rate = self._to_float(product.get("applied_vat_rate"))
             total = self._to_float(product.get("line_total_without_tax"))
 
+            line_currency_code = self._safe_text(product.get("currency_code"), default="TRY")
+
             line_payload = {
                 "master_code": product_code,
                 "line_type": 0,
@@ -91,8 +93,8 @@ class LogoPayloadBuilder:
                 "unit_price": unit_price,
                 "vat_rate": vat_rate,
                 "total": total,
-                "currency_code": self._safe_text(product.get("currency_code"), default="TRY"),
-                "exchange_rate": 0,
+                "currency_code": line_currency_code,
+                "exchange_rate": self._resolve_line_exchange_rate(invoice, line_currency_code),
                 "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=0),
                 "source_index": self._to_int(self.logo_settings.get("source_index"), default=0),
                 "division": self._to_int(self.logo_settings.get("division"), default=0),
@@ -133,6 +135,49 @@ class LogoPayloadBuilder:
             if currency_code:
                 return currency_code
         return "TRY"
+
+    def _resolve_exchange_rate(self, invoice: Dict[str, Any]) -> float:
+        currency_code = self._resolve_invoice_currency(invoice)
+        return self._resolve_line_exchange_rate(invoice, currency_code)
+
+    def _resolve_line_exchange_rate(self, invoice: Dict[str, Any], currency_code: str) -> float:
+        normalized_currency = self._safe_text(currency_code, default="TRY").upper()
+        if not normalized_currency or normalized_currency == "TRY":
+            return 0.0
+
+        currency_rates = invoice.get("currency_rates") or {}
+        if not isinstance(currency_rates, dict):
+            return 0.0
+
+        return self._to_float(currency_rates.get(normalized_currency), default=0.0)
+
+    def _resolve_logo_working_year(self, invoice: Dict[str, Any]) -> str:
+        configured_year = self._safe_text(self.logo_settings.get("logo_working_year"))
+        if configured_year:
+            return configured_year
+
+        invoice_date = self._safe_text(invoice.get("invoice_date"))
+        if not invoice_date:
+            return str(self._to_int(self.logo_settings.get("period_no"), default=1))
+
+        try:
+            normalized_text = invoice_date.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized_text)
+            return str(parsed.year)
+        except ValueError:
+            return str(self._to_int(self.logo_settings.get("period_no"), default=1))
+
+    def _resolve_document_time(self, value: Any) -> str:
+        text = self._safe_text(value)
+        if not text:
+            return "00:00:00"
+
+        try:
+            normalized_text = text.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized_text)
+            return parsed.strftime("%H:%M:%S")
+        except ValueError:
+            return "00:00:00"
 
     def _build_notes(self, invoice_id: int, payment_date: str, invoice_note: str) -> List[str]:
         notes = [f"Satta Invoice ID: {invoice_id}"]

@@ -3,7 +3,6 @@ from Common.path_helper import user_data_path
 from Common.qt_compat import Qt
 from Common.qt_compat import (
     QAbstractItemView,
-    QCheckBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -17,6 +16,7 @@ from Common.qt_compat import (
 )
 from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
 from Invoice.push_invoice import SattaInvoicePushConnector
+from Invoice.logo_transfer_service import LogoTransferService
 
 SETTINGS_FILE = user_data_path("app_settings.json")
 
@@ -59,13 +59,13 @@ class InvoiceTransferTab(QWidget):
         button_layout = QHBoxLayout()
         self.load_button = QPushButton("Faturaları Satta'dan Al")
         self.transfer_button = QPushButton(f"Faturaları {connector_display_name}'a Aktar")
-        self.edit_invoice_table_checkbox = QCheckBox("Fatura tablosunu düzenlenebilir yap")
-        self.edit_invoice_table_checkbox.toggled.connect(self.toggle_invoice_table_edit_mode)
+        self.edit_selected_button = QPushButton("Seçili Satırları Düzenle")
         self.load_button.clicked.connect(self.load_invoices)
         self.transfer_button.clicked.connect(self.transfer_selected_invoices)
+        self.edit_selected_button.clicked.connect(self.enable_selected_rows_editing)
         button_layout.addWidget(self.load_button)
         button_layout.addWidget(self.transfer_button)
-        button_layout.addWidget(self.edit_invoice_table_checkbox)
+        button_layout.addWidget(self.edit_selected_button)
         root_layout.addLayout(button_layout)
 
         self.invoice_table = QTableWidget(0, 10)
@@ -82,7 +82,7 @@ class InvoiceTransferTab(QWidget):
             "Invoice ID",
         ])
         self.invoice_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.invoice_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.invoice_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.invoice_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.invoice_table.setColumnWidth(0, 36)
         self.invoice_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -121,10 +121,14 @@ class InvoiceTransferTab(QWidget):
         self.invoice_details = {}
         self.invoice_id_map = {}
         self.invoice_raw_map = {}
+        self.editable_invoice_ids = set()
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.search_input.textChanged.connect(self.filter_invoices)
         self.invoice_table.itemSelectionChanged.connect(self.load_selected_invoice_details)
+        self.invoice_table.itemSelectionChanged.connect(self.update_edit_button_text)
+        self.invoice_table.itemChanged.connect(self.handle_table_item_changed)
+        self.update_edit_button_text()
 
 
     def load_active_connector(self):
@@ -169,23 +173,41 @@ class InvoiceTransferTab(QWidget):
 
         return settings_data.get("satta", {})
 
+    def load_logo_settings(self):
+        if not SETTINGS_FILE.exists():
+            return {}
+
+        try:
+            settings_data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+        return settings_data.get("logo", {})
+
     def apply_invoice_data(self, invoice_rows, invoice_details, invoice_id_map, invoice_raw_map):
-        self.all_invoices = invoice_rows
+        self.all_invoices = [tuple(str(value) if value is not None else "" for value in row) for row in invoice_rows]
         self.invoice_details = invoice_details
         self.invoice_id_map = invoice_id_map
         self.invoice_raw_map = invoice_raw_map
 
-        self.populate_invoice_table(self.all_invoices)
-
         try:
-            self.invoice_table.itemChanged.disconnect(self.update_selected_count)
+            self.invoice_table.itemChanged.disconnect(self.handle_table_item_changed)
         except RuntimeError:
             pass
         except TypeError:
             pass
 
-        self.invoice_table.itemChanged.connect(self.update_selected_count)
+        self.invoice_table.setUpdatesEnabled(False)
+        self.invoice_table.blockSignals(True)
+        try:
+            self.populate_invoice_table(self.all_invoices)
+        finally:
+            self.invoice_table.blockSignals(False)
+            self.invoice_table.setUpdatesEnabled(True)
+
+        self.invoice_table.itemChanged.connect(self.handle_table_item_changed)
         self.update_status_summary()
+        self.update_edit_button_text()
 
         if self.invoice_table.rowCount() > 0:
             self.invoice_table.selectRow(0)
@@ -200,7 +222,8 @@ class InvoiceTransferTab(QWidget):
 
     def populate_invoice_table(self, rows):
         self.invoice_table.setRowCount(0)
-        for row_data in rows:
+        for raw_row_data in rows:
+            row_data = self.normalize_table_row(raw_row_data)
             row_index = self.invoice_table.rowCount()
             self.invoice_table.insertRow(row_index)
 
@@ -212,12 +235,16 @@ class InvoiceTransferTab(QWidget):
 
             invoice_no = str(row_data[0]).strip() if row_data else ""
             invoice_id = self.invoice_id_map.get(invoice_no)
+            is_row_editable = invoice_id in self.editable_invoice_ids if invoice_id is not None else False
 
             for col_index, value in enumerate(row_data, start=1):
                 item = QTableWidgetItem(value)
                 if col_index == 1:
                     item.setData(Qt.UserRole, invoice_id)
-                if not self.edit_invoice_table_checkbox.isChecked() or col_index == 1:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                elif is_row_editable:
+                    item.setFlags(item.flags() | Qt.ItemIsEditable)
+                else:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.invoice_table.setItem(row_index, col_index, item)
 
@@ -225,6 +252,84 @@ class InvoiceTransferTab(QWidget):
             invoice_id_item = QTableWidgetItem(invoice_id_text)
             invoice_id_item.setFlags(invoice_id_item.flags() & ~Qt.ItemIsEditable)
             self.invoice_table.setItem(row_index, 9, invoice_id_item)
+
+    def normalize_table_row(self, row_data):
+        normalized_row = [str(value) if value is not None else "" for value in row_data[:8]]
+        while len(normalized_row) < 8:
+            normalized_row.append("")
+        return tuple(normalized_row)
+
+    def get_selected_row_indexes(self):
+        selection_model = self.invoice_table.selectionModel()
+        if selection_model is None:
+            return []
+        return sorted(index.row() for index in selection_model.selectedRows())
+
+    def update_edit_button_text(self):
+        selected_count = len(self.get_selected_row_indexes())
+        if selected_count == 1:
+            self.edit_selected_button.setText("Seçili Satırı Düzenle")
+        else:
+            self.edit_selected_button.setText("Seçili Satırları Düzenle")
+
+    def enable_selected_rows_editing(self):
+        selected_rows = self.get_selected_row_indexes()
+        if not selected_rows:
+            QMessageBox.warning(self, "Satır Seçilmedi", "Önce düzenlemek istediğin satırı veya satırları seç.")
+            return
+
+        self.invoice_table.setEditTriggers(
+            QAbstractItemView.DoubleClicked
+            | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.SelectedClicked
+        )
+
+        for row in selected_rows:
+            invoice_no_item = self.invoice_table.item(row, 1)
+            invoice_id = invoice_no_item.data(Qt.UserRole) if invoice_no_item is not None else None
+            if invoice_id is not None:
+                self.editable_invoice_ids.add(invoice_id)
+
+            for col in range(2, 9):
+                item = self.invoice_table.item(row, col)
+                if item is None:
+                    continue
+                item.setFlags(item.flags() | Qt.ItemIsEditable)
+
+    def handle_table_item_changed(self, item):
+        if item is None:
+            return
+
+        if item.column() == 0:
+            self.update_selected_count()
+            return
+
+        if item.column() in (1, 9):
+            return
+
+        invoice_no_item = self.invoice_table.item(item.row(), 1)
+        invoice_id = invoice_no_item.data(Qt.UserRole) if invoice_no_item is not None else None
+        if invoice_id is None:
+            self.update_selected_count()
+            return
+
+        invoice_no = invoice_no_item.text().strip() if invoice_no_item else ""
+        data_index = item.column() - 1
+
+        updated_rows = []
+        for row_data in self.all_invoices:
+            normalized_row = list(self.normalize_table_row(row_data))
+            current_invoice_no = str(normalized_row[0]).strip()
+            current_invoice_id = self.invoice_id_map.get(current_invoice_no)
+
+            if current_invoice_id == invoice_id or (invoice_no and current_invoice_no == invoice_no):
+                normalized_row[data_index] = item.text().strip()
+                updated_rows.append(tuple(normalized_row))
+            else:
+                updated_rows.append(tuple(normalized_row))
+
+        self.all_invoices = updated_rows
+        self.update_selected_count()
 
     def populate_detail_table(self, invoice_no):
         details = self.invoice_details.get(invoice_no, [])
@@ -257,52 +362,29 @@ class InvoiceTransferTab(QWidget):
         invoice_no = invoice_no_item.text().strip()
         self.populate_detail_table(invoice_no)
 
-    def toggle_invoice_table_edit_mode(self, checked):
-        if checked:
-            self.invoice_table.setEditTriggers(
-                QAbstractItemView.DoubleClicked
-                | QAbstractItemView.EditKeyPressed
-                | QAbstractItemView.SelectedClicked
-            )
-        else:
-            self.invoice_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-
-        current_rows = []
-        for row in range(self.invoice_table.rowCount()):
-            row_data = []
-            for col in range(1, self.invoice_table.columnCount() - 1):
-                item = self.invoice_table.item(row, col)
-                row_data.append(item.text() if item else "")
-            current_rows.append(tuple(row_data))
-
-        self.populate_invoice_table(current_rows)
-        if self.invoice_table.rowCount() > 0:
-            self.invoice_table.selectRow(0)
-            self.load_selected_invoice_details()
 
     def filter_invoices(self, *_args, show_no_results_message=False):
         search_text = self.search_input.text().strip().lower()
 
         if not search_text:
-            self.populate_invoice_table(self.all_invoices)
-            self.update_status_summary()
-            if self.invoice_table.rowCount() > 0:
-                self.invoice_table.selectRow(0)
-                self.load_selected_invoice_details()
-            else:
-                self.detail_table.setRowCount(0)
-                self.detail_title_label.setText("Seçili fatura kalemleri")
-            return
+            filtered_rows = self.all_invoices
+        else:
+            filtered_rows = []
+            for row in self.all_invoices:
+                invoice_no = str(row[0]).lower()
+                supplier_name = str(row[1]).lower() if len(row) > 1 else ""
 
-        filtered_rows = []
-        for row in self.all_invoices:
-            invoice_no = str(row[0]).lower()
-            supplier_name = str(row[1]).lower()
+                if search_text in invoice_no or search_text in supplier_name:
+                    filtered_rows.append(row)
 
-            if search_text in invoice_no or search_text in supplier_name:
-                filtered_rows.append(row)
+        self.invoice_table.setUpdatesEnabled(False)
+        self.invoice_table.blockSignals(True)
+        try:
+            self.populate_invoice_table(filtered_rows)
+        finally:
+            self.invoice_table.blockSignals(False)
+            self.invoice_table.setUpdatesEnabled(True)
 
-        self.populate_invoice_table(filtered_rows)
         self.update_status_summary()
 
         if self.invoice_table.rowCount() > 0:
@@ -367,15 +449,6 @@ class InvoiceTransferTab(QWidget):
 
         return selected_raw_invoices
 
-    def build_logo_transfer_payloads(self, selected_raw_invoices):
-        logo_settings = self.load_logo_settings()
-        payload_builder = LogoPayloadBuilder(logo_settings)
-        payloads = []
-
-        for raw_invoice in selected_raw_invoices:
-            payloads.append(payload_builder.build_invoice_payload(raw_invoice))
-
-        return payloads
 
     def remove_transferred_invoices_from_ui(self, selected_invoice_nos):
         selected_invoice_no_set = {invoice_no.strip() for invoice_no in selected_invoice_nos if str(invoice_no).strip()}
@@ -434,30 +507,18 @@ class InvoiceTransferTab(QWidget):
             )
             return
 
+        logo_settings = self.load_logo_settings()
+        transfer_service = LogoTransferService(logo_settings)
+
         try:
-            payloads = self.build_logo_transfer_payloads(selected_raw_invoices)
+            transfer_result = transfer_service.transfer_invoices(selected_raw_invoices)
         except Exception as exc:
-            QMessageBox.critical(self, "Payload Hatası", f"Logo aktarım payload'ı hazırlanamadı:\n{exc}")
+            QMessageBox.critical(self, "Aktarım Hatası", f"Logo aktarım servisi çalıştırılamadı:\n{exc}")
             return
 
-        bridge_runner = LogoBridgeRunner()
-        successful_invoice_ids = []
-        failed_results = []
-
-        for invoice_id, invoice_no, payload in zip(selected_invoice_ids, selected_invoice_nos, payloads):
-            try:
-                bridge_result = bridge_runner.run_invoice_transfer(payload)
-            except Exception as exc:
-                failed_results.append(f"{invoice_no}: Bridge çalıştırılamadı - {exc}")
-                continue
-
-            is_success = bool(bridge_result.get("is_success"))
-            message = str(bridge_result.get("message", "")).strip()
-
-            if is_success:
-                successful_invoice_ids.append(invoice_id)
-            else:
-                failed_results.append(f"{invoice_no}: {message or 'Logo aktarımı başarısız.'}")
+        successful_invoice_ids = transfer_result.get("successful_invoice_ids", [])
+        successful_invoice_nos = transfer_result.get("successful_invoice_nos", [])
+        failed_results = transfer_result.get("failed_results", [])
 
         if not successful_invoice_ids:
             error_text = "\n".join(failed_results) if failed_results else "Logo'ya aktarılabilecek fatura bulunamadı."
@@ -475,11 +536,14 @@ class InvoiceTransferTab(QWidget):
             )
             return
 
-        successful_invoice_no_set = {
-            invoice_no
-            for invoice_id, invoice_no in zip(selected_invoice_ids, selected_invoice_nos)
-            if invoice_id in successful_invoice_ids
-        }
+        successful_invoice_no_set = set(successful_invoice_nos)
+        if not successful_invoice_no_set:
+            successful_invoice_no_set = {
+                invoice_no
+                for invoice_id, invoice_no in zip(selected_invoice_ids, selected_invoice_nos)
+                if invoice_id in successful_invoice_ids
+            }
+
         self.remove_transferred_invoices_from_ui(list(successful_invoice_no_set))
 
         success_message = f"{len(successful_invoice_ids)} fatura Logo'ya aktarıldı ve Satta üzerinde işaretlendi."

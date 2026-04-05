@@ -6,7 +6,9 @@ from typing import List, Tuple, Optional
 class SupplierReaderConfig:
     server: str = "127.0.0.1"
     database: str = "TIGERDB"
-    username: str = "sa"
+    db_username: str = ""
+    db_password: str = ""
+    username: str = ""
     password: str = ""
     firm_no: int = 1
     period_no: int = 1
@@ -14,8 +16,16 @@ class SupplierReaderConfig:
     def __post_init__(self):
         self.server = str(self.server).strip()
         self.database = str(self.database).strip()
+        self.db_username = str(self.db_username).strip()
+        self.db_password = str(self.db_password)
         self.username = str(self.username).strip()
         self.password = str(self.password)
+
+        if not self.db_username and self.username:
+            self.db_username = self.username
+        if not self.db_password and self.password:
+            self.db_password = self.password
+
         self.firm_no = self._coerce_int(self.firm_no, "firm_no")
         self.period_no = self._coerce_int(self.period_no, "period_no")
 
@@ -50,13 +60,13 @@ class SupplierReader:
         return f"LG_{firm_str}_CLCARD"
 
     def _build_connection_string(self) -> str:
-        if self.config.username:
+        if self.config.db_username:
             return (
                 f"DRIVER={{SQL Server}};"
                 f"SERVER={self.config.server};"
                 f"DATABASE={self.config.database};"
-                f"UID={self.config.username};"
-                f"PWD={self.config.password};"
+                f"UID={self.config.db_username};"
+                f"PWD={self.config.db_password};"
             )
 
         return (
@@ -121,12 +131,12 @@ class SupplierReader:
         except pyodbc.Error as e:
             error_text = str(e)
             if "Login failed for user" in error_text:
-                auth_mode_text = "SQL Authentication" if self.config.username else "Windows Authentication"
+                auth_mode_text = "SQL Authentication" if self.config.db_username else "Windows Authentication"
                 raise Exception(
                     "Logo veritabanı giriş hatası:\n"
                     "SQL Server oturumu açılamadı.\n\n"
                     "Bu genelde şu nedenlerle olur:\n"
-                    "- Kullanıcı adı veya şifre yanlış\n"
+                    "- DB kullanıcı adı veya DB şifre yanlış\n"
                     "- SQL Server'da SQL Authentication kapalı\n"
                     "- Yanlış sunucuya veya yanlış veritabanına bağlanılıyor\n"
                     "- Kullanıcı hesabının ilgili veritabanına yetkisi yok\n\n"
@@ -134,7 +144,7 @@ class SupplierReader:
                     f"Server: {self.config.server}\n"
                     f"Database: {self.config.database}\n"
                     f"Authentication: {auth_mode_text}\n"
-                    f"Username: {self.config.username or '(Windows kullanıcısı)'}"
+                    f"DB Username: {self.config.db_username or '(Windows kullanıcısı)'}"
                 )
             if "Invalid object name" in error_text:
                 raise Exception(

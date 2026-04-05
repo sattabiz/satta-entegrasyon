@@ -113,30 +113,88 @@ class SettingsTab(QWidget):
         return satta_group
 
     def build_connector_group(self) -> QGroupBox:
-        if self.active_connector == "logo":
-            return self.build_logo_group()
-        if self.active_connector == "sap":
-            return self.build_sap_group()
-        if self.active_connector == "canias":
-            return self.build_canias_group()
-        return self.build_empty_connector_group()
+        connector_display_name = self.get_connector_display_name()
+        connector_group = QGroupBox(f"{connector_display_name} Connector Ayarları")
+        connector_layout = QVBoxLayout(connector_group)
 
-    def build_logo_group(self) -> QGroupBox:
-        connector_group = QGroupBox("Logo Bağlantı Ayarları")
-        connector_form = QFormLayout(connector_group)
+        info_group = self.build_connector_info_group()
+        database_group = self.build_database_group()
+        user_group = self.build_connector_user_group()
+
+        connector_layout.addWidget(info_group)
+        connector_layout.addWidget(database_group)
+        connector_layout.addWidget(user_group)
+
+        self.connector_test_button = QPushButton(f"{connector_display_name} Bağlantısını Test Et")
+        connector_layout.addWidget(self.connector_test_button)
+
+        return connector_group
+
+    def build_connector_info_group(self) -> QGroupBox:
+        connector_display_name = self.get_connector_display_name()
+
+        info_group = QGroupBox("Bilgi ve Yönlendirme")
+        info_layout = QVBoxLayout(info_group)
+
+        if self.active_connector == "logo":
+            info_text = (
+                "Bu connector iki ayrı katmanla çalışır:\n"
+                "- Database Bağlantı Ayarları: Yönetici / teknik erişim bilgileri\n"
+                "- Connector Kullanıcı Ayarları: Logo içinde işlem yapacak kullanıcı bilgileri\n\n"
+                "Not: SQL kullanıcı adı boş bırakılırsa Windows Authentication kullanılabilir."
+            )
+        elif self.active_connector == "sap":
+            info_text = (
+                "Bu connector için teknik bağlantı bilgileri ve SAP işlem kullanıcısı ayrı tutulur.\n"
+                "Böylece sistem bağlantı ayarları ile operasyon kullanıcı bilgileri birbirine karışmaz."
+            )
+        elif self.active_connector == "canias":
+            info_text = (
+                "Bu connector için teknik bağlantı bilgileri ve Canias işlem kullanıcısı ayrı tutulur.\n"
+                "Tenant / firma bilgisi database bağlantı tarafında değerlendirilir."
+            )
+        else:
+            info_text = "Aktif connector seçilmedi."
+
+        info_label = QLabel(info_text)
+        info_label.setWordWrap(True)
+        info_layout.addWidget(info_label)
+        return info_group
+
+    def build_database_group(self) -> QGroupBox:
+        if self.active_connector == "logo":
+            return self.build_logo_database_group()
+        if self.active_connector == "sap":
+            return self.build_sap_database_group()
+        if self.active_connector == "canias":
+            return self.build_canias_database_group()
+        return self.build_empty_database_group()
+
+    def build_connector_user_group(self) -> QGroupBox:
+        if self.active_connector == "logo":
+            return self.build_logo_user_group()
+        if self.active_connector == "sap":
+            return self.build_sap_user_group()
+        if self.active_connector == "canias":
+            return self.build_canias_user_group()
+        return self.build_empty_user_group()
+
+    def build_logo_database_group(self) -> QGroupBox:
+        database_group = QGroupBox("Database Bağlantı Ayarları")
+        database_form = QFormLayout(database_group)
 
         self.logo_server_input = QLineEdit()
-        self.logo_server_input.setPlaceholderText("127.0.0.1")
+        self.logo_server_input.setPlaceholderText("127.0.0.1 veya SERVER\\INSTANCE")
 
         self.logo_database_input = QLineEdit()
         self.logo_database_input.setPlaceholderText("TIGERDB")
 
-        self.logo_username_input = QLineEdit()
-        self.logo_username_input.setPlaceholderText("sa")
+        self.logo_db_username_input = QLineEdit()
+        self.logo_db_username_input.setPlaceholderText("SQL kullanıcı adı (opsiyonel)")
 
-        self.logo_password_input = QLineEdit()
-        self.logo_password_input.setPlaceholderText("SQL şifre")
-        self.logo_password_input.setEchoMode(QLineEdit.Password)
+        self.logo_db_password_input = QLineEdit()
+        self.logo_db_password_input.setPlaceholderText("SQL şifre")
+        self.logo_db_password_input.setEchoMode(QLineEdit.Password)
 
         self.logo_firm_no_input = QSpinBox()
         self.logo_firm_no_input.setRange(1, 999)
@@ -146,21 +204,34 @@ class SettingsTab(QWidget):
         self.logo_period_no_input.setRange(1, 99)
         self.logo_period_no_input.setValue(1)
 
-        self.connector_test_button = QPushButton("Logo Bağlantısını Test Et")
+        database_form.addRow("SQL Server", self.logo_server_input)
+        database_form.addRow("Database", self.logo_database_input)
+        database_form.addRow("DB Kullanıcı", self.logo_db_username_input)
+        database_form.addRow("DB Şifre", self.logo_db_password_input)
+        database_form.addRow("Firma No", self.logo_firm_no_input)
+        database_form.addRow("Dönem No", self.logo_period_no_input)
 
-        connector_form.addRow("SQL Server", self.logo_server_input)
-        connector_form.addRow("Database", self.logo_database_input)
-        connector_form.addRow("Kullanıcı", self.logo_username_input)
-        connector_form.addRow("Şifre", self.logo_password_input)
-        connector_form.addRow("Firma No", self.logo_firm_no_input)
-        connector_form.addRow("Dönem No", self.logo_period_no_input)
-        connector_form.addRow("", self.connector_test_button)
+        return database_group
 
-        return connector_group
+    def build_logo_user_group(self) -> QGroupBox:
+        user_group = QGroupBox("Connector Kullanıcı Ayarları")
+        user_form = QFormLayout(user_group)
 
-    def build_sap_group(self) -> QGroupBox:
-        connector_group = QGroupBox("SAP Bağlantı Ayarları")
-        connector_form = QFormLayout(connector_group)
+        self.logo_user_input = QLineEdit()
+        self.logo_user_input.setPlaceholderText("Logo kullanıcı adı")
+
+        self.logo_user_password_input = QLineEdit()
+        self.logo_user_password_input.setPlaceholderText("Logo parola")
+        self.logo_user_password_input.setEchoMode(QLineEdit.Password)
+
+        user_form.addRow("Logo Kullanıcı", self.logo_user_input)
+        user_form.addRow("Logo Parola", self.logo_user_password_input)
+
+        return user_group
+
+    def build_sap_database_group(self) -> QGroupBox:
+        database_group = QGroupBox("Database Bağlantı Ayarları")
+        database_form = QFormLayout(database_group)
 
         self.sap_host_input = QLineEdit()
         self.sap_host_input.setPlaceholderText("sap.example.local")
@@ -171,6 +242,20 @@ class SettingsTab(QWidget):
         self.sap_client_input = QLineEdit()
         self.sap_client_input.setPlaceholderText("100")
 
+        self.sap_language_input = QLineEdit()
+        self.sap_language_input.setPlaceholderText("TR")
+
+        database_form.addRow("Host", self.sap_host_input)
+        database_form.addRow("System Number", self.sap_system_number_input)
+        database_form.addRow("Client", self.sap_client_input)
+        database_form.addRow("Dil", self.sap_language_input)
+
+        return database_group
+
+    def build_sap_user_group(self) -> QGroupBox:
+        user_group = QGroupBox("Connector Kullanıcı Ayarları")
+        user_form = QFormLayout(user_group)
+
         self.sap_username_input = QLineEdit()
         self.sap_username_input.setPlaceholderText("SAP kullanıcı")
 
@@ -178,30 +263,29 @@ class SettingsTab(QWidget):
         self.sap_password_input.setPlaceholderText("SAP şifre")
         self.sap_password_input.setEchoMode(QLineEdit.Password)
 
-        self.sap_language_input = QLineEdit()
-        self.sap_language_input.setPlaceholderText("TR")
+        user_form.addRow("SAP Kullanıcı", self.sap_username_input)
+        user_form.addRow("SAP Şifre", self.sap_password_input)
 
-        self.connector_test_button = QPushButton("SAP Bağlantısını Test Et")
+        return user_group
 
-        connector_form.addRow("Host", self.sap_host_input)
-        connector_form.addRow("System Number", self.sap_system_number_input)
-        connector_form.addRow("Client", self.sap_client_input)
-        connector_form.addRow("Kullanıcı", self.sap_username_input)
-        connector_form.addRow("Şifre", self.sap_password_input)
-        connector_form.addRow("Dil", self.sap_language_input)
-        connector_form.addRow("", self.connector_test_button)
-
-        return connector_group
-
-    def build_canias_group(self) -> QGroupBox:
-        connector_group = QGroupBox("Canias Bağlantı Ayarları")
-        connector_form = QFormLayout(connector_group)
+    def build_canias_database_group(self) -> QGroupBox:
+        database_group = QGroupBox("Database Bağlantı Ayarları")
+        database_form = QFormLayout(database_group)
 
         self.canias_host_input = QLineEdit()
         self.canias_host_input.setPlaceholderText("canias.example.local")
 
         self.canias_tenant_input = QLineEdit()
         self.canias_tenant_input.setPlaceholderText("Tenant / Firma")
+
+        database_form.addRow("Host", self.canias_host_input)
+        database_form.addRow("Tenant / Firma", self.canias_tenant_input)
+
+        return database_group
+
+    def build_canias_user_group(self) -> QGroupBox:
+        user_group = QGroupBox("Connector Kullanıcı Ayarları")
+        user_form = QFormLayout(user_group)
 
         self.canias_username_input = QLineEdit()
         self.canias_username_input.setPlaceholderText("Canias kullanıcı")
@@ -210,28 +294,22 @@ class SettingsTab(QWidget):
         self.canias_password_input.setPlaceholderText("Canias şifre")
         self.canias_password_input.setEchoMode(QLineEdit.Password)
 
-        self.connector_test_button = QPushButton("Canias Bağlantısını Test Et")
+        user_form.addRow("Canias Kullanıcı", self.canias_username_input)
+        user_form.addRow("Canias Şifre", self.canias_password_input)
 
-        connector_form.addRow("Host", self.canias_host_input)
-        connector_form.addRow("Tenant / Firma", self.canias_tenant_input)
-        connector_form.addRow("Kullanıcı", self.canias_username_input)
-        connector_form.addRow("Şifre", self.canias_password_input)
-        connector_form.addRow("", self.connector_test_button)
+        return user_group
 
-        return connector_group
+    def build_empty_database_group(self) -> QGroupBox:
+        database_group = QGroupBox("Database Bağlantı Ayarları")
+        database_layout = QVBoxLayout(database_group)
+        database_layout.addWidget(QLabel("Aktif connector seçilmedi."))
+        return database_group
 
-    def build_empty_connector_group(self) -> QGroupBox:
-        connector_group = QGroupBox("Bağlantı Ayarları")
-        connector_layout = QVBoxLayout(connector_group)
-
-        info_label = QLabel("Aktif connector seçilmedi. Kurulum sihirbazından bir connector seçerek devam et.")
-        connector_layout.addWidget(info_label)
-
-        self.connector_test_button = QPushButton("Bağlantı Testi Hazır Değil")
-        self.connector_test_button.setEnabled(False)
-        connector_layout.addWidget(self.connector_test_button)
-
-        return connector_group
+    def build_empty_user_group(self) -> QGroupBox:
+        user_group = QGroupBox("Connector Kullanıcı Ayarları")
+        user_layout = QVBoxLayout(user_group)
+        user_layout.addWidget(QLabel("Aktif connector seçilmedi."))
+        return user_group
 
     def create_satta_config(self) -> SattaInvoiceConfig:
         return SattaInvoiceConfig(
@@ -290,13 +368,13 @@ class SettingsTab(QWidget):
 
     def handle_logo_test(self) -> None:
         if not self.logo_server_input.text().strip() or not self.logo_database_input.text().strip():
-            QMessageBox.warning(self, "Eksik Bilgi", "Logo SQL Server ve Database alanlarını doldur.")
+            QMessageBox.warning(self, "Eksik Bilgi", "Database bağlantısı için SQL Server ve Database alanlarını doldur.")
             return
 
         QMessageBox.information(
             self,
             "Logo Bağlantısı",
-            "Logo bağlantı testi için bilgiler hazır. SQL test akışı daha sonra eklenecek.",
+            "Logo için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
         )
 
     def handle_sap_test(self) -> None:
@@ -307,7 +385,7 @@ class SettingsTab(QWidget):
         QMessageBox.information(
             self,
             "SAP Bağlantısı",
-            "SAP bağlantı testi için bilgiler hazır. Gerçek bağlantı testi daha sonra eklenecek.",
+            "SAP için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
         )
 
     def handle_canias_test(self) -> None:
@@ -318,7 +396,7 @@ class SettingsTab(QWidget):
         QMessageBox.information(
             self,
             "Canias Bağlantısı",
-            "Canias bağlantı testi için bilgiler hazır. Gerçek bağlantı testi daha sonra eklenecek.",
+            "Canias için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
         )
 
     def get_default_settings(self) -> dict:
@@ -332,24 +410,26 @@ class SettingsTab(QWidget):
             "logo": {
                 "server": "",
                 "database": "",
-                "username": "",
-                "password": "",
+                "db_username": "",
+                "db_password": "",
                 "firm_no": 1,
                 "period_no": 1,
+                "logo_user": "",
+                "logo_password": "",
             },
             "sap": {
                 "host": "",
                 "system_number": "",
                 "client": "",
-                "username": "",
-                "password": "",
                 "language": "TR",
+                "sap_user": "",
+                "sap_password": "",
             },
             "canias": {
                 "host": "",
                 "tenant": "",
-                "username": "",
-                "password": "",
+                "canias_user": "",
+                "canias_password": "",
             },
         }
 
@@ -380,10 +460,12 @@ class SettingsTab(QWidget):
             return {
                 "server": self.logo_server_input.text().strip(),
                 "database": self.logo_database_input.text().strip(),
-                "username": self.logo_username_input.text().strip(),
-                "password": self.logo_password_input.text().strip(),
+                "db_username": self.logo_db_username_input.text().strip(),
+                "db_password": self.logo_db_password_input.text().strip(),
                 "firm_no": self.logo_firm_no_input.value(),
                 "period_no": self.logo_period_no_input.value(),
+                "logo_user": self.logo_user_input.text().strip(),
+                "logo_password": self.logo_user_password_input.text().strip(),
             }
 
         if self.active_connector == "sap":
@@ -391,17 +473,17 @@ class SettingsTab(QWidget):
                 "host": self.sap_host_input.text().strip(),
                 "system_number": self.sap_system_number_input.text().strip(),
                 "client": self.sap_client_input.text().strip(),
-                "username": self.sap_username_input.text().strip(),
-                "password": self.sap_password_input.text().strip(),
                 "language": self.sap_language_input.text().strip(),
+                "sap_user": self.sap_username_input.text().strip(),
+                "sap_password": self.sap_password_input.text().strip(),
             }
 
         if self.active_connector == "canias":
             return {
                 "host": self.canias_host_input.text().strip(),
                 "tenant": self.canias_tenant_input.text().strip(),
-                "username": self.canias_username_input.text().strip(),
-                "password": self.canias_password_input.text().strip(),
+                "canias_user": self.canias_username_input.text().strip(),
+                "canias_password": self.canias_password_input.text().strip(),
             }
 
         return {}
@@ -445,10 +527,12 @@ class SettingsTab(QWidget):
             logo_settings = settings_data.get("logo", {})
             self.logo_server_input.setText(str(logo_settings.get("server", "")))
             self.logo_database_input.setText(str(logo_settings.get("database", "")))
-            self.logo_username_input.setText(str(logo_settings.get("username", "")))
-            self.logo_password_input.setText(str(logo_settings.get("password", "")))
+            self.logo_db_username_input.setText(str(logo_settings.get("db_username", "")))
+            self.logo_db_password_input.setText(str(logo_settings.get("db_password", "")))
             self.logo_firm_no_input.setValue(int(logo_settings.get("firm_no", 1) or 1))
             self.logo_period_no_input.setValue(int(logo_settings.get("period_no", 1) or 1))
+            self.logo_user_input.setText(str(logo_settings.get("logo_user", "")))
+            self.logo_user_password_input.setText(str(logo_settings.get("logo_password", "")))
             return
 
         if self.active_connector == "sap":
@@ -456,14 +540,14 @@ class SettingsTab(QWidget):
             self.sap_host_input.setText(str(sap_settings.get("host", "")))
             self.sap_system_number_input.setText(str(sap_settings.get("system_number", "")))
             self.sap_client_input.setText(str(sap_settings.get("client", "")))
-            self.sap_username_input.setText(str(sap_settings.get("username", "")))
-            self.sap_password_input.setText(str(sap_settings.get("password", "")))
             self.sap_language_input.setText(str(sap_settings.get("language", "TR")))
+            self.sap_username_input.setText(str(sap_settings.get("sap_user", "")))
+            self.sap_password_input.setText(str(sap_settings.get("sap_password", "")))
             return
 
         if self.active_connector == "canias":
             canias_settings = settings_data.get("canias", {})
             self.canias_host_input.setText(str(canias_settings.get("host", "")))
             self.canias_tenant_input.setText(str(canias_settings.get("tenant", "")))
-            self.canias_username_input.setText(str(canias_settings.get("username", "")))
-            self.canias_password_input.setText(str(canias_settings.get("password", "")))
+            self.canias_username_input.setText(str(canias_settings.get("canias_user", "")))
+            self.canias_password_input.setText(str(canias_settings.get("canias_password", "")))
