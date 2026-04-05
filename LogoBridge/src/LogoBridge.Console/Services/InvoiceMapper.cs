@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using LogoBridge.Console.Models;
 
 namespace LogoBridge.Console.Services;
@@ -19,6 +20,7 @@ public sealed class InvoiceMapper
 
         return new Dictionary<string, string>
         {
+            ["TYPE"] = ResolveInvoiceType(payload.InvoiceType),
             ["NUMBER"] = payload.InvoiceNumber,
             ["DOC_NUMBER"] = payload.DocumentNumber,
             ["ARP_CODE"] = payload.ArpCode,
@@ -28,14 +30,14 @@ public sealed class InvoiceMapper
             ["AUXILIARY_CODE"] = payload.AuxiliaryCode,
             ["AUTH_CODE"] = payload.AuthorizationCode,
             ["TRADING_GROUP"] = payload.TradingGroup,
-            ["DIVISION"] = payload.Division.ToString(),
-            ["DEPARTMENT"] = payload.Department.ToString(),
-            ["SOURCE_INDEX"] = payload.SourceIndex.ToString(),
-            ["FACTORY_NR"] = payload.FactoryNr.ToString(),
-            ["WAREHOUSE_NR"] = payload.WarehouseNr.ToString(),
-            ["CURRENCY_CODE"] = payload.CurrencyCode,
-            ["EXCHANGE_RATE"] = payload.ExchangeRate.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["INVOICE_TYPE"] = payload.InvoiceType,
+            ["DIVISION"] = payload.Division.ToString(CultureInfo.InvariantCulture),
+            ["DEPARTMENT"] = payload.Department.ToString(CultureInfo.InvariantCulture),
+            ["SOURCE_WH"] = payload.WarehouseNr.ToString(CultureInfo.InvariantCulture),
+            ["SOURCE_COST_GRP"] = payload.SourceIndex.ToString(CultureInfo.InvariantCulture),
+            ["FACTORY_NR"] = payload.FactoryNr.ToString(CultureInfo.InvariantCulture),
+            ["CURR_INVOICE"] = ResolveCurrencyCode(payload.CurrencyCode),
+            ["TC_XRATE"] = payload.ExchangeRate.ToString(CultureInfo.InvariantCulture),
+            ["RC_XRATE"] = payload.ExchangeRate.ToString(CultureInfo.InvariantCulture),
             ["NOTES"] = string.Join(" | ", payload.Notes),
         };
     }
@@ -70,24 +72,59 @@ public sealed class InvoiceMapper
 
         return new Dictionary<string, string>
         {
+            ["TYPE"] = ResolveLineType(line.LineType),
             ["MASTER_CODE"] = line.MasterCode,
-            ["LINE_TYPE"] = line.LineType.ToString(),
             ["DESCRIPTION"] = line.Description,
-            ["QUANTITY"] = line.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["QUANTITY"] = line.Quantity.ToString(CultureInfo.InvariantCulture),
             ["UNIT_CODE"] = line.UnitCode,
-            ["UNIT_PRICE"] = line.UnitPrice.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["VAT_RATE"] = line.VatRate.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["TOTAL"] = line.Total.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["CURRENCY_CODE"] = line.CurrencyCode,
-            ["EXCHANGE_RATE"] = line.ExchangeRate.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["WAREHOUSE_NR"] = line.WarehouseNr.ToString(),
-            ["SOURCE_INDEX"] = line.SourceIndex.ToString(),
-            ["DIVISION"] = line.Division.ToString(),
-            ["DEPARTMENT"] = line.Department.ToString(),
+            ["PRICE"] = line.UnitPrice.ToString(CultureInfo.InvariantCulture),
+            ["VAT_RATE"] = line.VatRate.ToString(CultureInfo.InvariantCulture),
+            ["TOTAL"] = line.Total.ToString(CultureInfo.InvariantCulture),
+            ["CURR_TRANSACTION"] = ResolveCurrencyCode(line.CurrencyCode),
+            ["TC_XRATE"] = line.ExchangeRate.ToString(CultureInfo.InvariantCulture),
+            ["RC_XRATE"] = line.ExchangeRate.ToString(CultureInfo.InvariantCulture),
+            ["SOURCEINDEX"] = line.WarehouseNr.ToString(CultureInfo.InvariantCulture),
+            ["SOURCECOSTGRP"] = line.SourceIndex.ToString(CultureInfo.InvariantCulture),
+            ["DIVISION"] = line.Division.ToString(CultureInfo.InvariantCulture),
+            ["DEPARTMENT"] = line.Department.ToString(CultureInfo.InvariantCulture),
             ["AUXILIARY_CODE"] = line.AuxiliaryCode,
             ["PROJECT_CODE"] = line.ProjectCode,
-            ["COST_CENTER_CODE"] = line.CostCenterCode,
+            ["CENTER_CODE"] = line.CostCenterCode,
             ["VARIANT_CODE"] = line.VariantCode,
+        };
+    }
+
+    private string ResolveInvoiceType(string invoiceType)
+    {
+        if (string.Equals(invoiceType, "purchase", StringComparison.OrdinalIgnoreCase))
+        {
+            return "1";
+        }
+
+        return "1";
+    }
+
+    private string ResolveLineType(int lineType)
+    {
+        if (lineType < 0)
+        {
+            return "0";
+        }
+
+        return lineType.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private string ResolveCurrencyCode(string currencyCode)
+    {
+        var normalizedCode = (currencyCode ?? string.Empty).Trim().ToUpperInvariant();
+
+        return normalizedCode switch
+        {
+            "TRY" or "TL" => "0",
+            "USD" => "1",
+            "EUR" => "20",
+            "GBP" => "17",
+            _ => normalizedCode,
         };
     }
 }

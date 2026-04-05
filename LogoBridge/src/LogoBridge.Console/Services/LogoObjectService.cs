@@ -301,18 +301,131 @@ public sealed class LogoObjectService
 
     private bool TryMapHeaderFields(object invoiceDataObject, Dictionary<string, string> headerFields, out string errorMessage)
     {
+        var skippedOptionalFields = new List<string>();
+
         foreach (var field in headerFields)
         {
-            var setSucceeded = TrySetFieldValue(invoiceDataObject, field.Key, field.Value);
-            if (!setSucceeded)
+            var candidateNames = GetHeaderFieldCandidates(field.Key);
+            var setSucceeded = false;
+
+            foreach (var candidateName in candidateNames)
             {
-                errorMessage = $"Header alanı yazılamadı: {field.Key}";
-                return false;
+                if (TrySetFieldValue(invoiceDataObject, candidateName, field.Value))
+                {
+                    setSucceeded = true;
+                    break;
+                }
             }
+
+            if (setSucceeded)
+            {
+                continue;
+            }
+
+            if (IsOptionalHeaderField(field.Key))
+            {
+                skippedOptionalFields.Add(field.Key);
+                continue;
+            }
+
+            errorMessage = $"Header alanı yazılamadı: {field.Key}";
+            return false;
         }
 
-        errorMessage = string.Empty;
+        errorMessage = skippedOptionalFields.Count > 0
+            ? $"Opsiyonel alanlar atlandı: {string.Join(", ", skippedOptionalFields)}"
+            : string.Empty;
+
         return true;
+    }
+
+    private IEnumerable<string> GetHeaderFieldCandidates(string fieldName)
+    {
+        return fieldName.ToUpperInvariant() switch
+        {
+            "TYPE" => new[] { "TYPE", "TRCODE" },
+            "NUMBER" => new[] { "NUMBER", "FICHENO", "FICHE_NO" },
+            "DOC_NUMBER" => new[] { "DOC_NUMBER", "DOCUMENT_NO", "DOCUMENT_NUMBER" },
+            "DATE" => new[] { "DATE" },
+            "TIME" => new[] { "TIME", "HOUR" },
+            "ARP_CODE" => new[] { "ARP_CODE", "CLIENT_CODE" },
+            "DESCRIPTION" => new[] { "DESCRIPTION" },
+            "AUXILIARY_CODE" => new[] { "AUXILIARY_CODE", "AUX_CODE" },
+            "AUTH_CODE" => new[] { "AUTH_CODE", "AUTHORIZATION_CODE" },
+            "TRADING_GROUP" => new[] { "TRADING_GROUP" },
+            "DIVISION" => new[] { "DIVISION" },
+            "DEPARTMENT" => new[] { "DEPARTMENT" },
+            "SOURCE_WH" => new[] { "SOURCE_WH", "SOURCEINDEX", "SOURCE_INDEX", "WAREHOUSE_NR", "WAREHOUSENR" },
+            "SOURCE_COST_GRP" => new[] { "SOURCE_COST_GRP", "SOURCECOSTGRP", "SOURCE_COSTGROUP", "SOURCE_INDEX" },
+            "FACTORY_NR" => new[] { "FACTORY_NR", "FACTORYNR" },
+            "CURR_INVOICE" => new[] { "CURR_INVOICE", "CURRENCY_CODE", "CURR_CODE" },
+            "TC_XRATE" => new[] { "TC_XRATE", "EXCHANGE_RATE" },
+            "RC_XRATE" => new[] { "RC_XRATE", "EXCHANGE_RATE" },
+            "NOTES" => new[] { "NOTES" },
+            _ => new[] { fieldName }
+        };
+    }
+
+    private bool IsOptionalHeaderField(string fieldName)
+    {
+        var optionalFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "NUMBER",
+            "DOC_NUMBER",
+            "TIME",
+            "AUXILIARY_CODE",
+            "AUTH_CODE",
+            "TRADING_GROUP",
+            "FACTORY_NR",
+            "CURRENCY_CODE",
+            "EXCHANGE_RATE"
+        };
+
+        return optionalFields.Contains(fieldName);
+    }
+
+    private IEnumerable<string> GetLineFieldCandidates(string fieldName)
+    {
+        return fieldName.ToUpperInvariant() switch
+        {
+            "TYPE" => new[] { "TYPE", "LINETYPE", "LINE_TYPE" },
+            "MASTER_CODE" => new[] { "MASTER_CODE", "ITEM_CODE", "STOCK_CODE" },
+            "DESCRIPTION" => new[] { "DESCRIPTION" },
+            "QUANTITY" => new[] { "QUANTITY" },
+            "UNIT_CODE" => new[] { "UNIT_CODE", "UNIT" },
+            "PRICE" => new[] { "PRICE", "UNIT_PRICE" },
+            "VAT_RATE" => new[] { "VAT_RATE" },
+            "TOTAL" => new[] { "TOTAL" },
+            "CURR_TRANSACTION" => new[] { "CURR_TRANSACTION", "CURRENCY_CODE", "CURR_CODE" },
+            "TC_XRATE" => new[] { "TC_XRATE", "EXCHANGE_RATE" },
+            "RC_XRATE" => new[] { "RC_XRATE", "EXCHANGE_RATE" },
+            "SOURCEINDEX" => new[] { "SOURCEINDEX", "SOURCE_INDEX", "WAREHOUSE_NR", "WAREHOUSENR" },
+            "SOURCECOSTGRP" => new[] { "SOURCECOSTGRP", "SOURCE_COST_GRP", "SOURCE_COSTGROUP" },
+            "DIVISION" => new[] { "DIVISION" },
+            "DEPARTMENT" => new[] { "DEPARTMENT" },
+            "AUXILIARY_CODE" => new[] { "AUXILIARY_CODE", "AUX_CODE" },
+            "PROJECT_CODE" => new[] { "PROJECT_CODE" },
+            "CENTER_CODE" => new[] { "CENTER_CODE", "COST_CENTER_CODE" },
+            "VARIANT_CODE" => new[] { "VARIANT_CODE" },
+            _ => new[] { fieldName }
+        };
+    }
+
+    private bool IsOptionalLineField(string fieldName)
+    {
+        var optionalFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "DESCRIPTION",
+            "CURR_TRANSACTION",
+            "TC_XRATE",
+            "RC_XRATE",
+            "AUXILIARY_CODE",
+            "PROJECT_CODE",
+            "CENTER_CODE",
+            "VARIANT_CODE"
+        };
+
+        return optionalFields.Contains(fieldName);
     }
 
     private bool TryMapTransactionLines(object invoiceDataObject, List<Dictionary<string, string>> transactionLines, out string errorMessage)
@@ -346,14 +459,35 @@ public sealed class LogoObjectService
                 return false;
             }
 
+            var skippedOptionalFields = new List<string>();
+
             foreach (var field in transactionLines[i])
             {
-                var setSucceeded = TrySetFieldValue(appendResult.LineObject, field.Key, field.Value);
-                if (!setSucceeded)
+                var candidateNames = GetLineFieldCandidates(field.Key);
+                var setSucceeded = false;
+
+                foreach (var candidateName in candidateNames)
                 {
-                    errorMessage = $"{i + 1}. satır alanı yazılamadı: {field.Key}";
-                    return false;
+                    if (TrySetFieldValue(appendResult.LineObject, candidateName, field.Value))
+                    {
+                        setSucceeded = true;
+                        break;
+                    }
                 }
+
+                if (setSucceeded)
+                {
+                    continue;
+                }
+
+                if (IsOptionalLineField(field.Key))
+                {
+                    skippedOptionalFields.Add(field.Key);
+                    continue;
+                }
+
+                errorMessage = $"{i + 1}. satır alanı yazılamadı: {field.Key}";
+                return false;
             }
         }
 
@@ -467,6 +601,13 @@ public sealed class LogoObjectService
         AppendMappedHeaderSummary(result, headerFields);
         AppendMappedLineSummary(result, transactionLines);
         AppendLogoRuntimeDetails(result, unityApplication, invoiceDataObject);
+
+        var dataFieldNames = GetDataFieldNames(invoiceDataObject);
+        if (dataFieldNames.Count > 0)
+        {
+            result.Details["data_object_fields"] = string.Join(", ", dataFieldNames);
+        }
+
         return result;
     }
 
@@ -786,6 +927,51 @@ public sealed class LogoObjectService
             .ToList();
     }
 
+    private List<string> GetDataFieldNames(object? dataObject)
+    {
+        var names = new List<string>();
+
+        if (dataObject is null)
+        {
+            return names;
+        }
+
+        var fieldsContainer = TryGetMemberValue(dataObject, "DataFields", "Fields");
+        if (fieldsContainer is null)
+        {
+            return names;
+        }
+
+        try
+        {
+            if (fieldsContainer is IEnumerable enumerable)
+            {
+                foreach (var item in enumerable)
+                {
+                    if (item is null)
+                    {
+                        continue;
+                    }
+
+                    var name = ReadPossibleStringPropertyOrMethod(item, "Name");
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        names.Add(name);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Teşhis amaçlı, hata yutulabilir.
+        }
+
+        return names
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private void SafeLogoutAndDisconnect(object? unityApplication)
     {
         if (unityApplication is null)
@@ -853,7 +1039,7 @@ public sealed class LogoObjectService
             result.Details["first_line_quantity"] = quantity;
         }
 
-        if (firstLine.TryGetValue("UNIT_PRICE", out var unitPrice))
+        if (firstLine.TryGetValue("PRICE", out var unitPrice))
         {
             result.Details["first_line_unit_price"] = unitPrice;
         }
