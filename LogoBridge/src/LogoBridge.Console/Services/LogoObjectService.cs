@@ -348,7 +348,16 @@ public sealed class LogoObjectService
             "DOC_NUMBER" => new[] { "DOC_NUMBER", "DOCUMENT_NO", "DOCUMENT_NUMBER" },
             "DATE" => new[] { "DATE" },
             "TIME" => new[] { "TIME", "HOUR" },
-            "ARP_CODE" => new[] { "ARP_CODE", "CLIENT_CODE", "ARP_REF", "CLIENTREF" },
+            "ARP_CODE" => new[]
+            {
+                "ARP_CODE",
+                "CLIENT_CODE",
+                "CLCARD_CODE",
+                "ACCOUNT_CODE",
+                "ARP_REF",
+                "CLIENTREF",
+                "CLIENT_REFERENCE"
+            },
             "DESCRIPTION" => new[] { "DESCRIPTION" },
             "AUXILIARY_CODE" => new[] { "AUXILIARY_CODE", "AUX_CODE" },
             "AUTH_CODE" => new[] { "AUTH_CODE", "AUTHORIZATION_CODE" },
@@ -537,6 +546,11 @@ public sealed class LogoObjectService
 
     private bool TrySetFieldValue(object target, string fieldName, string value)
     {
+        if (TrySetMemberValue(target, fieldName, value))
+        {
+            return true;
+        }
+
         var fieldObject = TryGetFieldObject(target, fieldName);
         if (fieldObject is null)
         {
@@ -549,7 +563,13 @@ public sealed class LogoObjectService
         }
 
         var assignInvocation = TryInvokeMethod(fieldObject, "Assign", value);
-        return assignInvocation.MethodFound && assignInvocation.Success;
+        if (assignInvocation.MethodFound && assignInvocation.Success)
+        {
+            return true;
+        }
+
+        var setValueInvocation = TryInvokeMethod(fieldObject, "SetValue", value);
+        return setValueInvocation.MethodFound && setValueInvocation.Success;
     }
 
     private object? TryGetLinesContainer(object transactionsField)
