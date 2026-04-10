@@ -43,6 +43,8 @@ class LogoPayloadBuilder:
             "document_time": self._resolve_document_time(invoice.get("invoice_date")),
             "arp_code": seller_erp_id,
             "invoice_number": invoice_no,
+            "group_code": "1",
+            "do_code": "~",
             "description": seller_name,
             "auxiliary_code": self._safe_text(invoice.get("reference_no")),
             "authorization_code": "",
@@ -71,14 +73,14 @@ class LogoPayloadBuilder:
             if not product_code:
                 raise ValueError(
                     f"{index}. satır için ürün ERP kodu bulunamadı. "
-                    "company_product_erp_code veya erp_id alanı gerekli."
+                    "company_product_erp_id veya erp_id alanı gerekli."
                 )
 
             quantity = self._to_float(product.get("shipped_amount"))
             if quantity <= 0:
                 raise ValueError(f"{index}. satır için shipped_amount 0'dan büyük olmalıdır.")
 
-            unit_price = self._to_float(product.get("price_in_tl"))
+            unit_price = self._to_float(product.get("price"))
             vat_rate = self._to_float(product.get("applied_vat_rate"))
             total = self._to_float(product.get("line_total_without_tax"))
 
@@ -112,11 +114,15 @@ class LogoPayloadBuilder:
         return lines
 
     def _resolve_product_code(self, product: Dict[str, Any]) -> str:
-        product_code = self._safe_text(product.get("company_product_erp_code"))
+        product_code = self._safe_text(product.get("company_product_erp_id"))
         if product_code:
             return product_code
 
         product_code = self._safe_text(product.get("erp_id"))
+        if product_code:
+            return product_code
+
+        product_code = self._safe_text(product.get("company_product_erp_code"))
         if product_code:
             return product_code
 
