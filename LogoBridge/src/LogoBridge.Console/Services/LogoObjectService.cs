@@ -102,7 +102,7 @@ public sealed class LogoObjectService
                 return result;
             }
 
-            var headerMappingSucceeded = TryMapHeaderFields(invoiceDataObject, headerFields, out var headerError);
+            var headerMappingSucceeded = TryMapHeaderFields(invoiceDataObject, payload, headerFields, out var headerError);
             if (!headerMappingSucceeded)
             {
                 var result = BuildLogoFailureResult(
@@ -299,23 +299,15 @@ public sealed class LogoObjectService
         return (null, string.Empty);
     }
 
-    private bool TryMapHeaderFields(object invoiceDataObject, Dictionary<string, string> headerFields, out string errorMessage)
+    private bool TryMapHeaderFields(object invoiceDataObject, InvoicePayload payload, Dictionary<string, string> headerFields, out string errorMessage)
     {
         var skippedOptionalFields = new List<string>();
 
         foreach (var field in headerFields)
         {
-            var candidateNames = GetHeaderFieldCandidates(field.Key);
-            var setSucceeded = false;
-
-            foreach (var candidateName in candidateNames)
-            {
-                if (TrySetFieldValue(invoiceDataObject, candidateName, field.Value))
-                {
-                    setSucceeded = true;
-                    break;
-                }
-            }
+            var setSucceeded = field.Key.Equals("ARP_CODE", StringComparison.OrdinalIgnoreCase)
+                ? TryMapArpField(invoiceDataObject, payload, field.Value)
+                : TryMapGenericHeaderField(invoiceDataObject, field.Key, field.Value);
 
             if (setSucceeded)
             {
@@ -339,6 +331,53 @@ public sealed class LogoObjectService
         return true;
     }
 
+    private bool TryMapGenericHeaderField(object invoiceDataObject, string fieldName, string fieldValue)
+    {
+        var candidateNames = GetHeaderFieldCandidates(fieldName);
+        foreach (var candidateName in candidateNames)
+        {
+            if (TrySetFieldValue(invoiceDataObject, candidateName, fieldValue))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryMapArpField(object invoiceDataObject, InvoicePayload payload, string arpCode)
+    {
+        var clientReference = ReadOptionalPayloadInt(payload,
+            "ClientReference",
+            "ClientRef",
+            "ArpReference",
+            "ArpRef");
+
+        if (clientReference > 0)
+        {
+            var referenceText = clientReference.ToString(CultureInfo.InvariantCulture);
+            var referenceCandidates = new[] { "CLIENTREF", "ARP_REF", "CLIENT_REFERENCE" };
+            foreach (var candidateName in referenceCandidates)
+            {
+                if (TrySetFieldValue(invoiceDataObject, candidateName, referenceText))
+                {
+                    return true;
+                }
+            }
+        }
+
+        var codeCandidates = new[] { "ARP_CODE", "CLIENT_CODE", "CLCARD_CODE", "ACCOUNT_CODE" };
+        foreach (var candidateName in codeCandidates)
+        {
+            if (TrySetFieldValue(invoiceDataObject, candidateName, arpCode))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private IEnumerable<string> GetHeaderFieldCandidates(string fieldName)
     {
         return fieldName.ToUpperInvariant() switch
@@ -350,13 +389,13 @@ public sealed class LogoObjectService
             "TIME" => new[] { "TIME", "HOUR" },
             "ARP_CODE" => new[]
             {
+                "CLIENTREF",
+                "ARP_REF",
+                "CLIENT_REFERENCE",
                 "ARP_CODE",
                 "CLIENT_CODE",
                 "CLCARD_CODE",
-                "ACCOUNT_CODE",
-                "ARP_REF",
-                "CLIENTREF",
-                "CLIENT_REFERENCE"
+                "ACCOUNT_CODE"
             },
             "DESCRIPTION" => new[] { "DESCRIPTION" },
             "AUXILIARY_CODE" => new[] { "AUXILIARY_CODE", "AUX_CODE" },
@@ -732,6 +771,31 @@ public sealed class LogoObjectService
                 {
                     var propertyValue = property.GetValue(target);
                     return Convert.ToInt32(propertyValue, CultureInfo.InvariantCulture);
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+        }
+
+        return 0;
+    }
+
+    private int ReadOptionalPayloadInt(object payload, params string[] memberNames)
+    {
+        foreach (var memberName in memberNames)
+        {
+            try
+            {
+                var property = payload.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (property is not null)
+                {
+                    var value = property.GetValue(payload);
+                    if (value is not null)
+                    {
+                        return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+                    }
                 }
             }
             catch
