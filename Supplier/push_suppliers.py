@@ -36,7 +36,7 @@ class SattaSupplierPushConnector:
         for index, supplier in enumerate(suppliers):
             payload[str(index)] = {
                 "invited_company": {
-                    "name": self._safe_text(supplier.get("name"), "-"),
+                    "name": self._safe_text(supplier.get("name")),
                     "invited_person": self._safe_text(supplier.get("invited_person")),
                     "phone": self._safe_text(supplier.get("phone")),
                     "invited_email": self._safe_text(supplier.get("invited_email")),
