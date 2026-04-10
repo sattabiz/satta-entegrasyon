@@ -87,6 +87,20 @@ public sealed class LogoObjectService
 
             var creationResult = TryCreatePurchaseInvoiceDataObject(unityApplication);
             invoiceDataObject = creationResult.DataObject;
+            var initializeSucceeded = TryInitializeDataObject(invoiceDataObject);
+            if (!initializeSucceeded)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    invoiceDataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Satınalma faturası data object initialize edilemedi.",
+                    "LOGO_DATA_OBJECT_INIT_FAILED");
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
             if (invoiceDataObject is null)
             {
                 var result = BuildLogoFailureResult(
@@ -134,6 +148,7 @@ public sealed class LogoObjectService
                 return result;
             }
 
+            TryFillAccCodes(invoiceDataObject);
             var postSucceeded = TryPostDataObject(invoiceDataObject);
             if (!postSucceeded)
             {
@@ -558,6 +573,26 @@ public sealed class LogoObjectService
 
     private object? TryGetFieldObject(object target, string fieldName)
     {
+        var dataFieldsContainer = TryGetMemberValue(target, "DataFields");
+        if (dataFieldsContainer is not null)
+        {
+            var directCandidates = new[]
+            {
+                new { Method = "FieldByName", Args = new object[] { fieldName } },
+                new { Method = "Item", Args = new object[] { fieldName } },
+                new { Method = "get_Item", Args = new object[] { fieldName } },
+            };
+
+            foreach (var candidate in directCandidates)
+            {
+                var invocation = TryInvokeMethodForObject(dataFieldsContainer, candidate.Method, candidate.Args);
+                if (invocation.MethodFound && invocation.Success && invocation.ReturnValue is not null)
+                {
+                    return invocation.ReturnValue;
+                }
+            }
+        }
+
         var fieldsContainer = TryGetMemberValue(target, "DataFields", "Fields");
         if (fieldsContainer is null)
         {
@@ -699,6 +734,21 @@ public sealed class LogoObjectService
                 "LastErrorString",
                 "ErrorDesc",
                 "ErrorDescription");
+
+            result.Details["data_object_error_code"] = ReadPossibleStringPropertyOrMethod(
+                invoiceDataObject,
+                "ErrorCode",
+                "GetLastError");
+
+            result.Details["data_object_error_desc"] = ReadPossibleStringPropertyOrMethod(
+                invoiceDataObject,
+                "ErrorDesc",
+                "ErrorDescription");
+
+            result.Details["data_object_db_error_desc"] = ReadPossibleStringPropertyOrMethod(
+                invoiceDataObject,
+                "DBErrorDesc",
+                "GetLastDBObjectError");
 
             result.Details["data_object_members"] = string.Join(", ", GetPublicMemberNames(invoiceDataObject));
         }
@@ -1186,5 +1236,31 @@ public sealed class LogoObjectService
         }
 
         return errors;
+    }
+
+    private bool TryInitializeDataObject(object? dataObject)
+    {
+        if (dataObject is null)
+        {
+            return false;
+        }
+
+        var newResult = TryInvokeMethod(dataObject, "New", Array.Empty<object>());
+        if (newResult.MethodFound)
+        {
+            return newResult.Success;
+        }
+
+        return true;
+    }
+
+    private void TryFillAccCodes(object? dataObject)
+    {
+        if (dataObject is null)
+        {
+            return;
+        }
+
+        TryInvokeMethod(dataObject, "FillAccCodes", Array.Empty<object>());
     }
 }
