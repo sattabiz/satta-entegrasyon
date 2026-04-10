@@ -348,7 +348,7 @@ public sealed class LogoObjectService
             "DOC_NUMBER" => new[] { "DOC_NUMBER", "DOCUMENT_NO", "DOCUMENT_NUMBER" },
             "DATE" => new[] { "DATE" },
             "TIME" => new[] { "TIME", "HOUR" },
-            "ARP_CODE" => new[] { "ARP_CODE", "CLIENT_CODE" },
+            "ARP_CODE" => new[] { "ARP_CODE", "CLIENT_CODE", "ARP_REF", "CLIENTREF" },
             "DESCRIPTION" => new[] { "DESCRIPTION" },
             "AUXILIARY_CODE" => new[] { "AUXILIARY_CODE", "AUX_CODE" },
             "AUTH_CODE" => new[] { "AUTH_CODE", "AUTHORIZATION_CODE" },
@@ -371,6 +371,7 @@ public sealed class LogoObjectService
         var optionalFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "NUMBER",
+            "TYPE",
             "DOC_NUMBER",
             "TIME",
             "AUXILIARY_CODE",
@@ -1007,7 +1008,7 @@ public sealed class LogoObjectService
             result.Details["mapped_header_arp_code"] = arpCode;
         }
 
-        if (headerFields.TryGetValue("NUMBER", out var invoiceNumber))
+        if (headerFields.TryGetValue("FICHENO", out var invoiceNumber))
         {
             result.Details["mapped_header_number"] = invoiceNumber;
         }

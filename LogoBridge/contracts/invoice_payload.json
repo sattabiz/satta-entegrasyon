@@ -1,10 +1,8 @@
-
-
 {
-  "firm_no": 1,
+  "firm_no": 999,
   "period_no": 1,
-  "logo_user": "LOGO_USER",
-  "logo_password": "LOGO_PASSWORD",
+  "logo_user": "GERCEK_LOGO_KULLANICI",
+  "logo_password": "GERCEK_LOGO_SIFRE",
   "logo_company_code": "TIGERDB",
   "logo_working_year": "2025",
   "invoice_type": "purchase",
@@ -13,6 +11,8 @@
   "document_time": "00:00:00",
   "arp_code": "4343234234324",
   "invoice_number": "nev10008990",
+  "group_code": "1",
+  "do_code": "~",
   "description": "Üçmetal Çelik Sanayi Tic. Ltd. Şti",
   "auxiliary_code": "",
   "authorization_code": "",
@@ -31,7 +31,7 @@
   ],
   "lines": [
     {
-      "master_code": "BO03011",
+      "master_code": "51893",
       "line_type": 0,
       "description": "RULMAN 6001 2RS | ORS",
       "quantity": 100.0,
@@ -51,7 +51,7 @@
       "variant_code": ""
     },
     {
-      "master_code": "BO03003",
+      "master_code": "51885",
       "line_type": 0,
       "description": "RULMAN 6005 ZZ | ORS",
       "quantity": 100.0,
