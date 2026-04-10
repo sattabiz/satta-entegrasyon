@@ -122,6 +122,7 @@ public sealed class LogoObjectService
             dataTypeCandidates.Add(configuredXmlDataType);
         }
 
+        dataTypeCandidates.Add(1);
         dataTypeCandidates.Add(3);
 
         string bestError = string.Empty;
@@ -233,14 +234,16 @@ public sealed class LogoObjectService
 
         var invoiceElement = new XElement("INVOICE",
             new XAttribute("DBOP", "INS"),
-            new XElement("TRCODE", "1"),
+            new XElement("TYPE", "1"),
             new XElement("NUMBER", string.IsNullOrWhiteSpace(payload.InvoiceNumber) ? "~" : payload.InvoiceNumber),
             new XElement("DATE", documentDate),
             new XElement("TIME", timeValue),
             new XElement("DOC_NUMBER", payload.DocumentNumber ?? string.Empty),
+            new XElement("AUXIL_CODE", ReadOptionalPayloadString(payload, "AuxiliaryCode", string.Empty)),
             new XElement("ARP_CODE", payload.ArpCode ?? string.Empty),
             new XElement("GRPCODE", ReadOptionalPayloadString(payload, "GroupCode", "1")),
             new XElement("DOCODE", ReadOptionalPayloadString(payload, "DoCode", "~")),
+            new XElement("CURRSEL_TOTAL", "1"),
             new XElement("SOURCE_WH", payload.WarehouseNr.ToString(CultureInfo.InvariantCulture)),
             new XElement("SOURCE_COST_GRP", payload.SourceIndex.ToString(CultureInfo.InvariantCulture)),
             new XElement("POST_FLAGS", "247"),
@@ -248,6 +251,7 @@ public sealed class LogoObjectService
             new XElement("TOTAL_VAT", totalVat.ToString(CultureInfo.InvariantCulture)),
             new XElement("TOTAL_GROSS", totalGross.ToString(CultureInfo.InvariantCulture)),
             new XElement("TOTAL_NET", totalNet.ToString(CultureInfo.InvariantCulture)),
+            new XElement("PAYMENT_LIST"),
             new XElement("TRANSACTIONS",
                 payload.Lines.Select(line => BuildTransactionXml(line, payload)))
         );
@@ -255,7 +259,7 @@ public sealed class LogoObjectService
         if (!string.Equals(payload.CurrencyCode, "TRY", StringComparison.OrdinalIgnoreCase) &&
             payload.ExchangeRate > 0)
         {
-            invoiceElement.Add(new XElement("CURR_INVOICE", ResolveCurrencyCode(payload.CurrencyCode)));
+            invoiceElement.Add(new XElement("CURRSEL_TOTAL", ResolveCurrencyCode(payload.CurrencyCode)));
             invoiceElement.Add(new XElement("TC_XRATE", payload.ExchangeRate.ToString(CultureInfo.InvariantCulture)));
             invoiceElement.Add(new XElement("RC_XRATE", payload.ExchangeRate.ToString(CultureInfo.InvariantCulture)));
         }
@@ -268,17 +272,17 @@ public sealed class LogoObjectService
     private XElement BuildTransactionXml(InvoiceLinePayload line, InvoicePayload payload)
     {
         var lineElement = new XElement("TRANSACTION",
-            new XElement("TRCODE", "0"),
+            new XElement("TYPE", "0"),
             new XElement("MASTER_CODE", line.MasterCode ?? string.Empty),
-            new XElement("SOURCEINDEX", line.WarehouseNr.ToString(CultureInfo.InvariantCulture)),
-            new XElement("SOURCECOSTGRP", line.SourceIndex.ToString(CultureInfo.InvariantCulture)),
             new XElement("QUANTITY", line.Quantity.ToString(CultureInfo.InvariantCulture)),
             new XElement("PRICE", line.UnitPrice.ToString(CultureInfo.InvariantCulture)),
             new XElement("TOTAL", line.Total.ToString(CultureInfo.InvariantCulture)),
+            new XElement("VAT_RATE", line.VatRate.ToString(CultureInfo.InvariantCulture)),
             new XElement("UNIT_CODE", string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode),
             new XElement("UNIT_CONV1", "1"),
             new XElement("UNIT_CONV2", "1"),
-            new XElement("VAT_RATE", line.VatRate.ToString(CultureInfo.InvariantCulture)),
+            new XElement("SOURCE_WH", line.WarehouseNr.ToString(CultureInfo.InvariantCulture)),
+            new XElement("SOURCE_COST_GRP", line.SourceIndex.ToString(CultureInfo.InvariantCulture)),
             new XElement("DESCRIPTION", line.Description ?? string.Empty),
             new XElement("MONTH", payload.DocumentDate?.Month.ToString(CultureInfo.InvariantCulture) ?? "1"),
             new XElement("YEAR", payload.DocumentDate?.Year.ToString(CultureInfo.InvariantCulture) ?? DateTime.Now.Year.ToString(CultureInfo.InvariantCulture))
@@ -287,7 +291,7 @@ public sealed class LogoObjectService
         if (!string.Equals(line.CurrencyCode, "TRY", StringComparison.OrdinalIgnoreCase) &&
             line.ExchangeRate > 0)
         {
-            lineElement.Add(new XElement("CURR_TRANSACTION", ResolveCurrencyCode(line.CurrencyCode)));
+            lineElement.Add(new XElement("CURR_PRICE", ResolveCurrencyCode(line.CurrencyCode)));
             lineElement.Add(new XElement("TC_XRATE", line.ExchangeRate.ToString(CultureInfo.InvariantCulture)));
             lineElement.Add(new XElement("RC_XRATE", line.ExchangeRate.ToString(CultureInfo.InvariantCulture)));
             lineElement.Add(new XElement("EDT_CURR", ResolveCurrencyCode(line.CurrencyCode)));
