@@ -1,11 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
-using System.Text;
 using System.Xml.Linq;
 using LogoBridge.Console.Models;
 
@@ -115,8 +112,7 @@ public sealed class LogoObjectService
 
         var xmlCandidates = new List<(string Format, string Value)>
         {
-            ("raw", xmlDocument),
-            ("gzip_base64", CompressStringToBase64Gzip(xmlDocument))
+            ("raw", xmlDocument)
         };
 
         var dataTypeCandidates = new List<int>();
@@ -126,7 +122,7 @@ public sealed class LogoObjectService
             dataTypeCandidates.Add(configuredXmlDataType);
         }
 
-        dataTypeCandidates.AddRange(new[] { 1, 3, 8 });
+        dataTypeCandidates.Add(3);
 
         string bestError = string.Empty;
         string bestStatus = string.Empty;
@@ -169,7 +165,7 @@ public sealed class LogoObjectService
                 localError = Convert.ToString(args[4], CultureInfo.InvariantCulture) ?? string.Empty;
                 localStatus = SafeConvertToByte(args[5]);
 
-                if (localStatus != 4 && localReference > 0)
+                if ((localStatus == 1 || localStatus == 0) && localReference > 0)
                 {
                     var resultSuccess = BridgeResult.Success(
                         message: "Satınalma faturası Logo'ya XML AppendDataObject ile başarıyla kaydedildi.",
@@ -237,7 +233,7 @@ public sealed class LogoObjectService
 
         var invoiceElement = new XElement("INVOICE",
             new XAttribute("DBOP", "INS"),
-            new XElement("TYPE", "1"),
+            new XElement("TRCODE", "1"),
             new XElement("NUMBER", string.IsNullOrWhiteSpace(payload.InvoiceNumber) ? "~" : payload.InvoiceNumber),
             new XElement("DATE", documentDate),
             new XElement("TIME", timeValue),
@@ -272,7 +268,7 @@ public sealed class LogoObjectService
     private XElement BuildTransactionXml(InvoiceLinePayload line, InvoicePayload payload)
     {
         var lineElement = new XElement("TRANSACTION",
-            new XElement("TYPE", "0"),
+            new XElement("TRCODE", "0"),
             new XElement("MASTER_CODE", line.MasterCode ?? string.Empty),
             new XElement("SOURCEINDEX", line.WarehouseNr.ToString(CultureInfo.InvariantCulture)),
             new XElement("SOURCECOSTGRP", line.SourceIndex.ToString(CultureInfo.InvariantCulture)),
@@ -749,18 +745,6 @@ public sealed class LogoObjectService
         return errors;
     }
 
-    private string CompressStringToBase64Gzip(string input)
-    {
-        var bytes = Encoding.Unicode.GetBytes(input);
-
-        using var outputStream = new MemoryStream();
-        using (var gzipStream = new GZipStream(outputStream, CompressionMode.Compress, leaveOpen: true))
-        {
-            gzipStream.Write(bytes, 0, bytes.Length);
-        }
-
-        return Convert.ToBase64String(outputStream.ToArray());
-    }
 
     private string ResolveLogoTimeValue(string? documentTime)
     {
