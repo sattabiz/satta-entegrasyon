@@ -361,37 +361,51 @@ public sealed class LogoObjectService
     }
 
     private bool TryMapArpField(object invoiceDataObject, InvoicePayload payload, string arpCode)
+{
+    var referenceCandidates = new[] { "CLIENTREF", "ARP_REF", "CLIENT_REFERENCE" };
+
+    var clientReference = ReadOptionalPayloadInt(payload,
+        "ClientReference",
+        "ClientRef",
+        "ArpReference",
+        "ArpRef");
+
+    if (clientReference > 0)
     {
-        var clientReference = ReadOptionalPayloadInt(payload,
-            "ClientReference",
-            "ClientRef",
-            "ArpReference",
-            "ArpRef");
-
-        if (clientReference > 0)
+        var referenceText = clientReference.ToString(CultureInfo.InvariantCulture);
+        foreach (var candidateName in referenceCandidates)
         {
-            var referenceText = clientReference.ToString(CultureInfo.InvariantCulture);
-            var referenceCandidates = new[] { "CLIENTREF", "ARP_REF", "CLIENT_REFERENCE" };
-            foreach (var candidateName in referenceCandidates)
-            {
-                if (TrySetFieldValue(invoiceDataObject, candidateName, referenceText))
-                {
-                    return true;
-                }
-            }
-        }
-
-        var codeCandidates = new[] { "ARP_CODE", "CLIENT_CODE", "CLCARD_CODE", "ACCOUNT_CODE" };
-        foreach (var candidateName in codeCandidates)
-        {
-            if (TrySetFieldValue(invoiceDataObject, candidateName, arpCode))
+            if (TrySetFieldValue(invoiceDataObject, candidateName, referenceText))
             {
                 return true;
             }
         }
-
-        return false;
     }
+
+    if (int.TryParse((arpCode ?? string.Empty).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var arpCodeAsRef)
+        && arpCodeAsRef > 0)
+    {
+        var referenceText = arpCodeAsRef.ToString(CultureInfo.InvariantCulture);
+        foreach (var candidateName in referenceCandidates)
+        {
+            if (TrySetFieldValue(invoiceDataObject, candidateName, referenceText))
+            {
+                return true;
+            }
+        }
+    }
+
+    var codeCandidates = new[] { "ARP_CODE", "CLIENT_CODE", "CLCARD_CODE", "ACCOUNT_CODE" };
+    foreach (var candidateName in codeCandidates)
+    {
+        if (TrySetFieldValue(invoiceDataObject, candidateName, arpCode))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
 
     private IEnumerable<string> GetHeaderFieldCandidates(string fieldName)
     {
