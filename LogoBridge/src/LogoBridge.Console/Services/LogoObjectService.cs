@@ -661,6 +661,75 @@ public sealed class LogoObjectService
         return string.Empty;
     }
 
+    private object? TryResolveUnityEnumValue(string enumMemberName)
+    {
+    try
+    {
+        var primaryAssembly = typeof(UnityApplication).Assembly;
+
+        var primaryEnumType = primaryAssembly.GetTypes()
+            .FirstOrDefault(type =>
+                type.IsEnum &&
+                (string.Equals(type.Name, "DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(type.FullName, "UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase)));
+
+        if (primaryEnumType is not null)
+        {
+            try
+            {
+                return Enum.Parse(primaryEnumType, enumMemberName, ignoreCase: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+    catch
+    {
+    }
+
+    try
+    {
+        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+        foreach (var assembly in assemblies)
+        {
+            Type? enumType = null;
+
+            try
+            {
+                enumType = assembly.GetTypes()
+                    .FirstOrDefault(type =>
+                        type.IsEnum &&
+                        (string.Equals(type.Name, "DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(type.FullName, "UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase)));
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (enumType is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                return Enum.Parse(enumType, enumMemberName, ignoreCase: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+    catch
+    {
+    }
+
+    return null;
+    }
+
     private int ReadPossibleIntPropertyOrMethod(object target, params string[] memberNames)
     {
         foreach (var memberName in memberNames)
