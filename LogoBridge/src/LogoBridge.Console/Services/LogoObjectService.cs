@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
-using System.Xml.Linq;
 using LogoBridge.Console.Models;
 
 namespace LogoBridge.Console.Services;
@@ -20,6 +19,7 @@ public sealed class LogoObjectService
     public BridgeResult TransferPurchaseInvoice(InvoicePayload payload)
     {
         object? unityApplication = null;
+        object? dataObject = null;
 
         try
         {
@@ -50,6 +50,7 @@ public sealed class LogoObjectService
             {
                 return BuildLogoFailureResult(
                     unityApplication,
+                    dataObject,
                     payload,
                     headerFields,
                     transactionLines,
@@ -62,6 +63,7 @@ public sealed class LogoObjectService
             {
                 return BuildLogoFailureResult(
                     unityApplication,
+                    dataObject,
                     payload,
                     headerFields,
                     transactionLines,
@@ -74,6 +76,7 @@ public sealed class LogoObjectService
             {
                 return BuildLogoFailureResult(
                     unityApplication,
+                    dataObject,
                     payload,
                     headerFields,
                     transactionLines,
@@ -81,11 +84,99 @@ public sealed class LogoObjectService
                     "LOGO_COMPANY_LOGIN_FAILED");
             }
 
-            return TryAppendPurchaseInvoiceXml(
-                unityApplication,
-                payload,
-                headerFields,
-                transactionLines);
+            var creationResult = TryCreatePurchaseInvoiceDataObject(unityApplication);
+            dataObject = creationResult.DataObject;
+            if (dataObject is null)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    dataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Satınalma faturası object oluşturulamadı.",
+                    "LOGO_DATA_OBJECT_CREATE_FAILED");
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            if (!TryInitializeDataObject(dataObject))
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    dataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Satınalma faturası object başlatılamadı.",
+                    "LOGO_DATA_OBJECT_INIT_FAILED");
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            var headerMappingSucceeded = TryMapHeaderFields(dataObject, payload, out var headerError);
+            if (!headerMappingSucceeded)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    dataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Fatura üst bilgileri Logo object üzerine yazılamadı.",
+                    "LOGO_HEADER_MAPPING_FAILED");
+                result.Details["header_mapping_error"] = headerError;
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            var lineMappingSucceeded = TryMapTransactionLines(dataObject, payload, out var lineError);
+            if (!lineMappingSucceeded)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    dataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Fatura satırları Logo object üzerine yazılamadı.",
+                    "LOGO_LINE_MAPPING_FAILED");
+                result.Details["line_mapping_error"] = lineError;
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            TryFillAccCodes(dataObject);
+
+            var postSucceeded = TryPostDataObject(dataObject);
+            if (!postSucceeded)
+            {
+                var result = BuildLogoFailureResult(
+                    unityApplication,
+                    dataObject,
+                    payload,
+                    headerFields,
+                    transactionLines,
+                    "Satınalma faturası Logo'ya kaydedilemedi.",
+                    "LOGO_POST_FAILED");
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            var resultSuccess = BridgeResult.Success(
+                message: "Satınalma faturası Logo'ya başarıyla kaydedildi.",
+                logicalRef: ReadPossibleIntPropertyOrMethod(dataObject, "InternalReference", "LogicalRef", "DATA_REFERENCE"),
+                invoiceNumber: payload.InvoiceNumber,
+                documentNumber: payload.DocumentNumber,
+                arpCode: payload.ArpCode);
+
+            AppendPayloadSummary(resultSuccess, payload);
+            AppendMappedHeaderSummary(resultSuccess, headerFields);
+            AppendMappedLineSummary(resultSuccess, transactionLines);
+            AppendLogoRuntimeDetails(resultSuccess, unityApplication, dataObject);
+            resultSuccess.Details["data_object_create_strategy"] = creationResult.Strategy;
+
+            return resultSuccess;
         }
         catch (Exception exception)
         {
@@ -101,220 +192,242 @@ public sealed class LogoObjectService
         }
     }
 
-    private BridgeResult TryAppendPurchaseInvoiceXml(
-        object unityApplication,
-        InvoicePayload payload,
-        Dictionary<string, string> headerFields,
-        List<Dictionary<string, string>> transactionLines)
+    private (object? DataObject, string Strategy) TryCreatePurchaseInvoiceDataObject(object unityApplication)
     {
-        var xmlDocument = BuildPurchaseInvoiceXml(payload);
-        var paramXml = BuildAppendParametersXml();
-
-        var xmlCandidates = new List<(string Format, string Value)>
+        var candidates = new List<(object[] Args, string Strategy)>
         {
-            ("raw", xmlDocument)
+            (new object[] { "doPurchInvoice" }, "NewDataObject(doPurchInvoice)"),
+            (new object[] { "doPurchaseInvoice" }, "NewDataObject(doPurchaseInvoice)"),
+            (new object[] { "doPurchInv" }, "NewDataObject(doPurchInv)"),
+            (new object[] { 1 }, "NewDataObject(1)"),
+            (new object[] { 8 }, "NewDataObject(8)"),
         };
 
-        var dataTypeCandidates = new List<int>();
-        var configuredXmlDataType = ReadOptionalPayloadInt(payload, "XmlDataType", "DataType");
-        if (configuredXmlDataType > 0)
+        foreach (var candidate in candidates)
         {
-            dataTypeCandidates.Add(configuredXmlDataType);
-        }
-
-        dataTypeCandidates.Add(1);
-        dataTypeCandidates.Add(3);
-
-        string bestError = string.Empty;
-        string bestStatus = string.Empty;
-        string selectedFormat = string.Empty;
-        int selectedDataType = 0;
-        int dataReference = 0;
-
-        foreach (var dataType in dataTypeCandidates.Distinct())
-        {
-            foreach (var xmlCandidate in xmlCandidates)
+            var invocation = TryInvokeMethodForObject(unityApplication, "NewDataObject", candidate.Args);
+            if (invocation.MethodFound && invocation.ReturnValue is not null)
             {
-                var localReference = 0;
-                var localXml = xmlCandidate.Value;
-                var localParamXml = paramXml;
-                var localError = string.Empty;
-                byte localStatus = 32;
-
-                var args = new object[]
-                {
-                    dataType,
-                    localReference,
-                    localXml,
-                    localParamXml,
-                    localError,
-                    localStatus,
-                    string.Empty,
-                    0,
-                    string.Empty
-                };
-
-                var invocation = TryInvokeMethodForObject(unityApplication, "AppendDataObject", args);
-                if (!invocation.MethodFound)
-                {
-                    return BridgeResult.Failure(
-                        message: "AppendDataObject metodu bulunamadı.",
-                        errorCode: "LOGO_APPEND_DATA_OBJECT_NOT_FOUND");
-                }
-
-                localReference = SafeConvertToInt(args[1]);
-                localError = Convert.ToString(args[4], CultureInfo.InvariantCulture) ?? string.Empty;
-                localStatus = SafeConvertToByte(args[5]);
-
-                if ((localStatus == 1 || localStatus == 0) && localReference > 0)
-                {
-                    var resultSuccess = BridgeResult.Success(
-                        message: "Satınalma faturası Logo'ya XML AppendDataObject ile başarıyla kaydedildi.",
-                        logicalRef: localReference,
-                        invoiceNumber: payload.InvoiceNumber,
-                        documentNumber: payload.DocumentNumber,
-                        arpCode: payload.ArpCode);
-
-                    AppendPayloadSummary(resultSuccess, payload);
-                    AppendMappedHeaderSummary(resultSuccess, headerFields);
-                    AppendMappedLineSummary(resultSuccess, transactionLines);
-                    AppendLogoRuntimeDetails(resultSuccess, unityApplication);
-
-                    resultSuccess.Details["append_data_type"] = dataType.ToString(CultureInfo.InvariantCulture);
-                    resultSuccess.Details["append_xml_format"] = xmlCandidate.Format;
-                    resultSuccess.Details["append_status"] = localStatus.ToString(CultureInfo.InvariantCulture);
-                    resultSuccess.Details["append_xml_preview"] = xmlDocument.Length > 2000
-                        ? xmlDocument[..2000]
-                        : xmlDocument;
-
-                    return resultSuccess;
-                }
-
-                if (!string.IsNullOrWhiteSpace(localError))
-                {
-                    bestError = localError;
-                }
-
-                bestStatus = localStatus.ToString(CultureInfo.InvariantCulture);
-                selectedFormat = xmlCandidate.Format;
-                selectedDataType = dataType;
-                dataReference = localReference;
+                return (invocation.ReturnValue, candidate.Strategy);
             }
         }
 
-        var resultFailure = BridgeResult.Failure(
-            message: "Satınalma faturası XML AppendDataObject ile kaydedilemedi.",
-            errorCode: "LOGO_APPEND_DATA_OBJECT_FAILED");
-
-        AppendPayloadSummary(resultFailure, payload);
-        AppendMappedHeaderSummary(resultFailure, headerFields);
-        AppendMappedLineSummary(resultFailure, transactionLines);
-        AppendLogoRuntimeDetails(resultFailure, unityApplication);
-
-        resultFailure.Details["append_error"] = bestError;
-        resultFailure.Details["append_status"] = bestStatus;
-        resultFailure.Details["append_xml_format"] = selectedFormat;
-        resultFailure.Details["append_data_type"] = selectedDataType.ToString(CultureInfo.InvariantCulture);
-        resultFailure.Details["append_data_reference"] = dataReference.ToString(CultureInfo.InvariantCulture);
-        resultFailure.Details["append_xml_preview"] = xmlDocument.Length > 2000
-            ? xmlDocument[..2000]
-            : xmlDocument;
-
-        return resultFailure;
+        return (null, string.Empty);
     }
 
-    private string BuildPurchaseInvoiceXml(InvoicePayload payload)
+    private bool TryInitializeDataObject(object dataObject)
     {
-        var documentDate = payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty;
-        var timeValue = ResolveLogoTimeValue(payload.DocumentTime);
-        var totalDiscounted = payload.Lines.Sum(x => x.Total);
-        var totalVat = payload.Lines.Sum(x => x.Total * x.VatRate / 100m);
-        var totalGross = totalDiscounted;
-        var totalNet = totalDiscounted + totalVat;
-
-        var invoiceElement = new XElement("INVOICE",
-            new XAttribute("DBOP", "INS"),
-            new XElement("TYPE", "1"),
-            new XElement("NUMBER", string.IsNullOrWhiteSpace(payload.InvoiceNumber) ? "~" : payload.InvoiceNumber),
-            new XElement("DATE", documentDate),
-            new XElement("TIME", timeValue),
-            new XElement("DOC_NUMBER", payload.DocumentNumber ?? string.Empty),
-            new XElement("AUXIL_CODE", ReadOptionalPayloadString(payload, "AuxiliaryCode", string.Empty)),
-            new XElement("ARP_CODE", payload.ArpCode ?? string.Empty),
-            new XElement("GRPCODE", ReadOptionalPayloadString(payload, "GroupCode", "1")),
-            new XElement("DOCODE", ReadOptionalPayloadString(payload, "DoCode", "~")),
-            new XElement("CURRSEL_TOTAL", "1"),
-            new XElement("SOURCE_WH", payload.WarehouseNr.ToString(CultureInfo.InvariantCulture)),
-            new XElement("SOURCE_COST_GRP", payload.SourceIndex.ToString(CultureInfo.InvariantCulture)),
-            new XElement("POST_FLAGS", "247"),
-            new XElement("TOTAL_DISCOUNTED", totalDiscounted.ToString(CultureInfo.InvariantCulture)),
-            new XElement("TOTAL_VAT", totalVat.ToString(CultureInfo.InvariantCulture)),
-            new XElement("TOTAL_GROSS", totalGross.ToString(CultureInfo.InvariantCulture)),
-            new XElement("TOTAL_NET", totalNet.ToString(CultureInfo.InvariantCulture)),
-            new XElement("PAYMENT_LIST"),
-            new XElement("TRANSACTIONS",
-                payload.Lines.Select(line => BuildTransactionXml(line, payload)))
-        );
-
-        if (!string.Equals(payload.CurrencyCode, "TRY", StringComparison.OrdinalIgnoreCase) &&
-            payload.ExchangeRate > 0)
+        var newInvocation = TryInvokeMethod(dataObject, "New", Array.Empty<object>());
+        if (newInvocation.MethodFound)
         {
-            invoiceElement.Add(new XElement("CURRSEL_TOTAL", ResolveCurrencyCode(payload.CurrencyCode)));
-            invoiceElement.Add(new XElement("TC_XRATE", payload.ExchangeRate.ToString(CultureInfo.InvariantCulture)));
-            invoiceElement.Add(new XElement("RC_XRATE", payload.ExchangeRate.ToString(CultureInfo.InvariantCulture)));
+            return newInvocation.Success;
         }
 
-        var root = new XElement("PURCHASE_INVOICES", invoiceElement);
-        var document = new XDocument(new XDeclaration("1.0", "utf-16", "yes"), root);
-        return document.ToString(SaveOptions.DisableFormatting);
+        return true;
     }
 
-    private XElement BuildTransactionXml(InvoiceLinePayload line, InvoicePayload payload)
+    private bool TryMapHeaderFields(object dataObject, InvoicePayload payload, out string errorMessage)
     {
-        var lineElement = new XElement("TRANSACTION",
-            new XElement("TYPE", "0"),
-            new XElement("MASTER_CODE", line.MasterCode ?? string.Empty),
-            new XElement("QUANTITY", line.Quantity.ToString(CultureInfo.InvariantCulture)),
-            new XElement("PRICE", line.UnitPrice.ToString(CultureInfo.InvariantCulture)),
-            new XElement("TOTAL", line.Total.ToString(CultureInfo.InvariantCulture)),
-            new XElement("VAT_RATE", line.VatRate.ToString(CultureInfo.InvariantCulture)),
-            new XElement("UNIT_CODE", string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode),
-            new XElement("UNIT_CONV1", "1"),
-            new XElement("UNIT_CONV2", "1"),
-            new XElement("SOURCE_WH", line.WarehouseNr.ToString(CultureInfo.InvariantCulture)),
-            new XElement("SOURCE_COST_GRP", line.SourceIndex.ToString(CultureInfo.InvariantCulture)),
-            new XElement("DESCRIPTION", line.Description ?? string.Empty),
-            new XElement("MONTH", payload.DocumentDate?.Month.ToString(CultureInfo.InvariantCulture) ?? "1"),
-            new XElement("YEAR", payload.DocumentDate?.Year.ToString(CultureInfo.InvariantCulture) ?? DateTime.Now.Year.ToString(CultureInfo.InvariantCulture))
-        );
-
-        if (!string.Equals(line.CurrencyCode, "TRY", StringComparison.OrdinalIgnoreCase) &&
-            line.ExchangeRate > 0)
+        var headerAssignments = new List<(string FieldName, object? Value, bool Required)>
         {
-            lineElement.Add(new XElement("CURR_PRICE", ResolveCurrencyCode(line.CurrencyCode)));
-            lineElement.Add(new XElement("TC_XRATE", line.ExchangeRate.ToString(CultureInfo.InvariantCulture)));
-            lineElement.Add(new XElement("RC_XRATE", line.ExchangeRate.ToString(CultureInfo.InvariantCulture)));
-            lineElement.Add(new XElement("EDT_CURR", ResolveCurrencyCode(line.CurrencyCode)));
+            ("TYPE", ReadOptionalPayloadInt(payload, "LogoInvoiceType", "InvoiceTypeCode") is var typeCode && typeCode > 0 ? typeCode : 1, true),
+            ("NUMBER", string.IsNullOrWhiteSpace(payload.InvoiceNumber) ? "~" : payload.InvoiceNumber, true),
+            ("DOC_NUMBER", payload.DocumentNumber ?? string.Empty, false),
+            ("AUXIL_CODE", ReadOptionalPayloadString(payload, "AuxiliaryCode", "AUTO"), false),
+            ("DATE", payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty, true),
+            ("DOC_DATE", payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty, false),
+            ("TIME", ResolveLogoPackedTime(payload.DocumentTime), true),
+            ("ARP_CODE", payload.ArpCode ?? string.Empty, true),
+            ("POST_FLAGS", 247, false),
+            ("PAYMENT_CODE", ReadOptionalPayloadString(payload, "PaymentCode", string.Empty), false),
+            ("SALESMAN_CODE", ReadOptionalPayloadString(payload, "SalesmanCode", string.Empty), false),
+            ("NOTES1", payload.Description ?? string.Empty, false),
+            ("SOURCE_WH", payload.WarehouseNr, false),
+            ("DIVISION", payload.Division, false)
+        };
+
+        foreach (var assignment in headerAssignments)
+        {
+            if (!assignment.Required && IsEmptyValue(assignment.Value))
+            {
+                continue;
+            }
+
+            var success = TrySetDataFieldValue(dataObject, assignment.FieldName, assignment.Value);
+            if (!success && assignment.Required)
+            {
+                errorMessage = $"Header alanı yazılamadı: {assignment.FieldName}";
+                return false;
+            }
         }
 
-        return lineElement;
+        errorMessage = string.Empty;
+        return true;
     }
 
-    private string BuildAppendParametersXml()
+    private bool TryMapTransactionLines(object dataObject, InvoicePayload payload, out string errorMessage)
     {
-        return
-            "<?xml version=\"1.0\" encoding=\"utf-16\"?>" +
-            "<Parameters>" +
-            "<ReplicMode>0</ReplicMode>" +
-            "<CheckParams>1</CheckParams>" +
-            "<CheckRight>1</CheckRight>" +
-            "<ApplyCampaign>0</ApplyCampaign>" +
-            "<ApplyCondition>0</ApplyCondition>" +
-            "<FillAccCodes>1</FillAccCodes>" +
-            "<FormSeriLotLines>0</FormSeriLotLines>" +
-            "<GetStockLinePrice>0</GetStockLinePrice>" +
-            "<ExportAllData>0</ExportAllData>" +
-            "</Parameters>";
+        var transactionsField = TryGetDataFieldObject(dataObject, "TRANSACTIONS");
+        if (transactionsField is null)
+        {
+            errorMessage = "TRANSACTIONS alanı bulunamadı.";
+            return false;
+        }
+
+        var linesObject = TryGetMemberValue(transactionsField, "Lines");
+        if (linesObject is null)
+        {
+            errorMessage = "TRANSACTIONS.Lines erişilemedi.";
+            return false;
+        }
+
+        for (var index = 0; index < payload.Lines.Count; index++)
+        {
+            var appendInvocation = TryInvokeMethod(linesObject, "AppendLine", Array.Empty<object>());
+            if (!appendInvocation.MethodFound)
+            {
+                appendInvocation = TryInvokeMethod(linesObject, "Append", Array.Empty<object>());
+            }
+
+            if (!appendInvocation.MethodFound || !appendInvocation.Success)
+            {
+                errorMessage = $"{index + 1}. satır eklenemedi.";
+                return false;
+            }
+
+            var currentLine = TryGetLineByIndex(linesObject, index);
+            if (currentLine is null)
+            {
+                errorMessage = $"{index + 1}. satır referansı alınamadı.";
+                return false;
+            }
+
+            var line = payload.Lines[index];
+            var lineAssignments = new List<(string FieldName, object? Value, bool Required)>
+            {
+                ("TYPE", line.LineType >= 0 ? line.LineType : 4, true),
+                ("MASTER_CODE", line.MasterCode ?? string.Empty, true),
+                ("QUANTITY", line.Quantity, true),
+                ("PRICE", line.UnitPrice, true),
+                ("UNIT_CODE", string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode, true),
+                ("VAT_RATE", line.VatRate, true)
+            };
+
+            foreach (var assignment in lineAssignments)
+            {
+                if (!assignment.Required && IsEmptyValue(assignment.Value))
+                {
+                    continue;
+                }
+
+                var success = TrySetLineFieldValue(currentLine, assignment.FieldName, assignment.Value);
+                if (!success && assignment.Required)
+                {
+                    errorMessage = $"{index + 1}. satır alanı yazılamadı: {assignment.FieldName}";
+                    return false;
+                }
+            }
+        }
+
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    private object? TryGetLineByIndex(object linesObject, int index)
+    {
+        var candidates = new[]
+        {
+            new { Method = "Item", Args = new object[] { index } },
+            new { Method = "get_Item", Args = new object[] { index } },
+        };
+
+        foreach (var candidate in candidates)
+        {
+            var invocation = TryInvokeMethodForObject(linesObject, candidate.Method, candidate.Args);
+            if (invocation.MethodFound && invocation.ReturnValue is not null)
+            {
+                return invocation.ReturnValue;
+            }
+        }
+
+        try
+        {
+            return linesObject.GetType().InvokeMember(
+                string.Empty,
+                BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance,
+                binder: null,
+                target: linesObject,
+                args: new object[] { index });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private bool TryPostDataObject(object dataObject)
+    {
+        var postInvocation = TryInvokeMethod(dataObject, "Post", Array.Empty<object>());
+        return postInvocation.MethodFound && postInvocation.Success;
+    }
+
+    private void TryFillAccCodes(object dataObject)
+    {
+        TryInvokeMethod(dataObject, "FillAccCodes", Array.Empty<object>());
+    }
+
+    private bool TrySetDataFieldValue(object target, string fieldName, object? value)
+    {
+        var fieldObject = TryGetDataFieldObject(target, fieldName);
+        if (fieldObject is null)
+        {
+            return false;
+        }
+
+        return TrySetMemberValue(fieldObject, "Value", value);
+    }
+
+    private bool TrySetLineFieldValue(object lineObject, string fieldName, object? value)
+    {
+        var fieldObject = TryGetFieldByName(lineObject, fieldName);
+        if (fieldObject is null)
+        {
+            return false;
+        }
+
+        return TrySetMemberValue(fieldObject, "Value", value);
+    }
+
+    private object? TryGetDataFieldObject(object target, string fieldName)
+    {
+        var dataFields = TryGetMemberValue(target, "DataFields");
+        if (dataFields is null)
+        {
+            return null;
+        }
+
+        return TryGetFieldByName(dataFields, fieldName);
+    }
+
+    private object? TryGetFieldByName(object container, string fieldName)
+    {
+        var candidates = new[]
+        {
+            new { Method = "FieldByName", Args = new object[] { fieldName } },
+            new { Method = "Item", Args = new object[] { fieldName } },
+            new { Method = "get_Item", Args = new object[] { fieldName } },
+        };
+
+        foreach (var candidate in candidates)
+        {
+            var invocation = TryInvokeMethodForObject(container, candidate.Method, candidate.Args);
+            if (invocation.MethodFound && invocation.ReturnValue is not null)
+            {
+                return invocation.ReturnValue;
+            }
+        }
+
+        return null;
     }
 
     private object CreateUnityApplication()
@@ -413,6 +526,7 @@ public sealed class LogoObjectService
 
     private BridgeResult BuildLogoFailureResult(
         object unityApplication,
+        object? dataObject,
         InvoicePayload payload,
         Dictionary<string, string> headerFields,
         List<Dictionary<string, string>> transactionLines,
@@ -423,11 +537,11 @@ public sealed class LogoObjectService
         AppendPayloadSummary(result, payload);
         AppendMappedHeaderSummary(result, headerFields);
         AppendMappedLineSummary(result, transactionLines);
-        AppendLogoRuntimeDetails(result, unityApplication);
+        AppendLogoRuntimeDetails(result, unityApplication, dataObject);
         return result;
     }
 
-    private void AppendLogoRuntimeDetails(BridgeResult result, object unityApplication)
+    private void AppendLogoRuntimeDetails(BridgeResult result, object unityApplication, object? dataObject)
     {
         result.Details["logo_last_error"] = ReadPossibleStringPropertyOrMethod(
             unityApplication,
@@ -446,6 +560,24 @@ public sealed class LogoObjectService
             unityApplication,
             "GetLastDBObjectError",
             "LastDBObjectError");
+
+        if (dataObject is not null)
+        {
+            result.Details["data_object_error_code"] = ReadPossibleStringPropertyOrMethod(
+                dataObject,
+                "ErrorCode",
+                "GetLastError");
+
+            result.Details["data_object_error_desc"] = ReadPossibleStringPropertyOrMethod(
+                dataObject,
+                "ErrorDesc",
+                "ErrorDescription");
+
+            result.Details["data_object_db_error_desc"] = ReadPossibleStringPropertyOrMethod(
+                dataObject,
+                "DBErrorDesc",
+                "GetLastDBObjectError");
+        }
     }
 
     private string ReadPossibleStringPropertyOrMethod(object target, params string[] memberNames)
@@ -488,6 +620,48 @@ public sealed class LogoObjectService
         }
 
         return string.Empty;
+    }
+
+    private int ReadPossibleIntPropertyOrMethod(object target, params string[] memberNames)
+    {
+        foreach (var memberName in memberNames)
+        {
+            try
+            {
+                var property = target.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (property is not null)
+                {
+                    var propertyValue = property.GetValue(target);
+                    if (propertyValue is not null)
+                    {
+                        return Convert.ToInt32(propertyValue, CultureInfo.InvariantCulture);
+                    }
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+
+            try
+            {
+                var method = target.GetType().GetMethod(memberName, BindingFlags.Public | BindingFlags.Instance);
+                if (method is not null && method.GetParameters().Length == 0)
+                {
+                    var methodResult = method.Invoke(target, null);
+                    if (methodResult is not null)
+                    {
+                        return Convert.ToInt32(methodResult, CultureInfo.InvariantCulture);
+                    }
+                }
+            }
+            catch
+            {
+                // Bir sonraki alan denenir.
+            }
+        }
+
+        return 0;
     }
 
     private int ReadOptionalPayloadInt(object payload, params string[] memberNames)
@@ -538,6 +712,132 @@ public sealed class LogoObjectService
         {
             return defaultValue;
         }
+    }
+
+    private int ResolveLogoPackedTime(string? documentTime)
+    {
+        if (string.IsNullOrWhiteSpace(documentTime))
+        {
+            return PackTime(12, 12, 12);
+        }
+
+        if (TimeSpan.TryParse(documentTime, CultureInfo.InvariantCulture, out var parsedTime))
+        {
+            return PackTime(parsedTime.Hours, parsedTime.Minutes, parsedTime.Seconds);
+        }
+
+        return PackTime(12, 12, 12);
+    }
+
+    private int PackTime(int hour, int minute, int second)
+    {
+        return (hour * 16777216) + (minute * 65536) + (second * 256);
+    }
+
+    private bool IsEmptyValue(object? value)
+    {
+        return value is null || string.IsNullOrWhiteSpace(Convert.ToString(value, CultureInfo.InvariantCulture));
+    }
+
+    private object? TryGetMemberValue(object target, string memberName)
+    {
+        try
+        {
+            var property = target.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+            if (property is not null)
+            {
+                return property.GetValue(target);
+            }
+        }
+        catch
+        {
+            // Bir sonraki yol denenir.
+        }
+
+        try
+        {
+            var method = target.GetType().GetMethod(memberName, BindingFlags.Public | BindingFlags.Instance);
+            if (method is not null && method.GetParameters().Length == 0)
+            {
+                return method.Invoke(target, null);
+            }
+        }
+        catch
+        {
+            // Bir sonraki yol denenir.
+        }
+
+        return null;
+    }
+
+    private bool TrySetMemberValue(object target, string memberName, object? value)
+    {
+        try
+        {
+            var property = target.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+            if (property is not null && property.CanWrite)
+            {
+                var convertedValue = ConvertToPropertyType(value, property.PropertyType);
+                property.SetValue(target, convertedValue);
+                return true;
+            }
+        }
+        catch
+        {
+            // Fallback denenir.
+        }
+
+        try
+        {
+            target.GetType().InvokeMember(
+                memberName,
+                BindingFlags.SetProperty | BindingFlags.Public | BindingFlags.Instance,
+                binder: null,
+                target: target,
+                args: new[] { value });
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private object? ConvertToPropertyType(object? value, Type propertyType)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var targetType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+
+        if (targetType == typeof(string))
+        {
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+        }
+
+        if (targetType == typeof(int))
+        {
+            return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(short))
+        {
+            return Convert.ToInt16(value, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(double))
+        {
+            return Convert.ToDouble(value, CultureInfo.InvariantCulture);
+        }
+
+        if (targetType == typeof(decimal))
+        {
+            return Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+        }
+
+        return Convert.ChangeType(value, targetType, CultureInfo.InvariantCulture);
     }
 
     private bool CallBooleanMethod(object target, string methodName)
@@ -734,73 +1034,8 @@ public sealed class LogoObjectService
             {
                 errors[$"lines[{lineNo}].quantity"] = "quantity 0'dan büyük olmalıdır.";
             }
-
-            if (line.WarehouseNr < 0)
-            {
-                errors[$"lines[{lineNo}].warehouse_nr"] = "warehouse_nr negatif olamaz.";
-            }
-
-            if (line.SourceIndex < 0)
-            {
-                errors[$"lines[{lineNo}].source_index"] = "source_index negatif olamaz.";
-            }
         }
 
         return errors;
-    }
-
-
-    private string ResolveLogoTimeValue(string? documentTime)
-    {
-        if (string.IsNullOrWhiteSpace(documentTime))
-        {
-            return "0";
-        }
-
-        if (TimeSpan.TryParse(documentTime, CultureInfo.InvariantCulture, out var parsedTime))
-        {
-            var packedTime = (parsedTime.Hours * 16777216) + (parsedTime.Minutes * 65536) + (parsedTime.Seconds * 256);
-            return packedTime.ToString(CultureInfo.InvariantCulture);
-        }
-
-        return "0";
-    }
-
-    private string ResolveCurrencyCode(string? currencyCode)
-    {
-        var normalizedCode = (currencyCode ?? string.Empty).Trim().ToUpperInvariant();
-
-        return normalizedCode switch
-        {
-            "TRY" or "TL" => "0",
-            "USD" => "1",
-            "EUR" => "20",
-            "GBP" => "17",
-            _ => "0"
-        };
-    }
-
-    private int SafeConvertToInt(object? value)
-    {
-        try
-        {
-            return Convert.ToInt32(value, CultureInfo.InvariantCulture);
-        }
-        catch
-        {
-            return 0;
-        }
-    }
-
-    private byte SafeConvertToByte(object? value)
-    {
-        try
-        {
-            return Convert.ToByte(value, CultureInfo.InvariantCulture);
-        }
-        catch
-        {
-            return 0;
-        }
     }
 }
