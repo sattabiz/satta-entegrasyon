@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using LogoBridge.Console.Models;
-using Interop.UnityObjects;
+using UnityObjects;
 
 namespace LogoBridge.Console.Services;
 
