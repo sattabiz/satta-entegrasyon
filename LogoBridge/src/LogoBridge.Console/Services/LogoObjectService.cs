@@ -194,25 +194,61 @@ public sealed class LogoObjectService
 
     private (object? DataObject, string Strategy) TryCreatePurchaseInvoiceDataObject(object unityApplication)
     {
-        var candidates = new List<(object[] Args, string Strategy)>
+        var candidateNames = new[]
         {
-            (new object[] { "doPurchInvoice" }, "NewDataObject(doPurchInvoice)"),
-            (new object[] { "doPurchaseInvoice" }, "NewDataObject(doPurchaseInvoice)"),
-            (new object[] { "doPurchInv" }, "NewDataObject(doPurchInv)"),
-            (new object[] { 1 }, "NewDataObject(1)"),
-            (new object[] { 8 }, "NewDataObject(8)"),
+            "doPurchInvoice",
+            "doPurchaseInvoice",
+            "doPurchInv",
+            "doSalesInvoice"
         };
 
-        foreach (var candidate in candidates)
+        foreach (var candidateName in candidateNames)
         {
-            var invocation = TryInvokeMethodForObject(unityApplication, "NewDataObject", candidate.Args);
+            var enumValue = TryResolveUnityEnumValue(unityApplication, candidateName);
+            if (enumValue is null)
+            {
+                continue;
+            }
+
+            var invocation = TryInvokeMethodForObject(unityApplication, "NewDataObject", enumValue);
             if (invocation.MethodFound && invocation.ReturnValue is not null)
             {
-                return (invocation.ReturnValue, candidate.Strategy);
+                return (invocation.ReturnValue, $"NewDataObject({candidateName})");
+            }
+        }
+
+        var numericCandidates = new[] { 1, 8 };
+        foreach (var numericCandidate in numericCandidates)
+        {
+            var invocation = TryInvokeMethodForObject(unityApplication, "NewDataObject", numericCandidate);
+            if (invocation.MethodFound && invocation.ReturnValue is not null)
+            {
+                return (invocation.ReturnValue, $"NewDataObject({numericCandidate})");
             }
         }
 
         return (null, string.Empty);
+    }
+
+    private object? TryResolveUnityEnumValue(object unityApplication, string enumMemberName)
+    {
+        try
+        {
+            var assembly = unityApplication.GetType().Assembly;
+            var enumType = assembly.GetTypes()
+                .FirstOrDefault(type => type.IsEnum && string.Equals(type.Name, "DataObjectType", StringComparison.OrdinalIgnoreCase));
+
+            if (enumType is null)
+            {
+                return null;
+            }
+
+            return Enum.Parse(enumType, enumMemberName, ignoreCase: true);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private bool TryInitializeDataObject(object dataObject)
@@ -228,22 +264,29 @@ public sealed class LogoObjectService
 
     private bool TryMapHeaderFields(object dataObject, InvoicePayload payload, out string errorMessage)
     {
-        var headerAssignments = new List<(string FieldName, object? Value, bool Required)>
+        var typeCode = ReadOptionalPayloadInt(payload, "LogoInvoiceType", "InvoiceTypeCode");
+        if (typeCode <= 0)
         {
-            ("TYPE", ReadOptionalPayloadInt(payload, "LogoInvoiceType", "InvoiceTypeCode") is var typeCode && typeCode > 0 ? typeCode : 1, true),
-            ("NUMBER", string.IsNullOrWhiteSpace(payload.InvoiceNumber) ? "~" : payload.InvoiceNumber, true),
-            ("DOC_NUMBER", payload.DocumentNumber ?? string.Empty, false),
-            ("AUXIL_CODE", ReadOptionalPayloadString(payload, "AuxiliaryCode", "AUTO"), false),
-            ("DATE", payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty, true),
-            ("DOC_DATE", payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty, false),
-            ("TIME", ResolveLogoPackedTime(payload.DocumentTime), true),
-            ("ARP_CODE", payload.ArpCode ?? string.Empty, true),
-            ("POST_FLAGS", 247, false),
-            ("PAYMENT_CODE", ReadOptionalPayloadString(payload, "PaymentCode", string.Empty), false),
-            ("SALESMAN_CODE", ReadOptionalPayloadString(payload, "SalesmanCode", string.Empty), false),
-            ("NOTES1", payload.Description ?? string.Empty, false),
-            ("SOURCE_WH", payload.WarehouseNr, false),
-            ("DIVISION", payload.Division, false)
+            typeCode = 1;
+        }
+
+        var headerAssignments = new List<(string[] FieldNames, object? Value, bool Required)>
+        {
+            (new[] { "TYPE", "TRCODE" }, typeCode, true),
+            (new[] { "NUMBER", "FICHENO" }, string.IsNullOrWhiteSpace(payload.InvoiceNumber) ? "~" : payload.InvoiceNumber, true),
+            (new[] { "DOC_NUMBER", "DOCODE" }, payload.DocumentNumber ?? string.Empty, false),
+            (new[] { "AUXIL_CODE", "SPECODE" }, ReadOptionalPayloadString(payload, "AuxiliaryCode", "AUTO"), false),
+            (new[] { "DATE", "DATE_" }, payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty, true),
+            (new[] { "DOC_DATE" }, payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty, false),
+            (new[] { "TIME" }, ResolveLogoPackedTime(payload.DocumentTime), true),
+            (new[] { "ARP_CODE" }, payload.ArpCode ?? string.Empty, true),
+            (new[] { "POST_FLAGS" }, 247, false),
+            (new[] { "PAYMENT_CODE" }, ReadOptionalPayloadString(payload, "PaymentCode", string.Empty), false),
+            (new[] { "SALESMAN_CODE" }, ReadOptionalPayloadString(payload, "SalesmanCode", string.Empty), false),
+            (new[] { "NOTES1", "GENEXP1" }, payload.Description ?? string.Empty, false),
+            (new[] { "SOURCE_WH" }, payload.WarehouseNr, false),
+            (new[] { "DIVISION", "BRANCH" }, payload.Division, false),
+            (new[] { "DEPARTMENT" }, payload.Department, false)
         };
 
         foreach (var assignment in headerAssignments)
@@ -253,10 +296,10 @@ public sealed class LogoObjectService
                 continue;
             }
 
-            var success = TrySetDataFieldValue(dataObject, assignment.FieldName, assignment.Value);
+            var success = TrySetFirstAvailableDataFieldValue(dataObject, assignment.FieldNames, assignment.Value);
             if (!success && assignment.Required)
             {
-                errorMessage = $"Header alanı yazılamadı: {assignment.FieldName}";
+                errorMessage = $"Header alanı yazılamadı: {string.Join(" / ", assignment.FieldNames)}";
                 return false;
             }
         }
@@ -303,14 +346,16 @@ public sealed class LogoObjectService
             }
 
             var line = payload.Lines[index];
-            var lineAssignments = new List<(string FieldName, object? Value, bool Required)>
+            var lineAssignments = new List<(string[] FieldNames, object? Value, bool Required)>
             {
-                ("TYPE", line.LineType >= 0 ? line.LineType : 4, true),
-                ("MASTER_CODE", line.MasterCode ?? string.Empty, true),
-                ("QUANTITY", line.Quantity, true),
-                ("PRICE", line.UnitPrice, true),
-                ("UNIT_CODE", string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode, true),
-                ("VAT_RATE", line.VatRate, true)
+                (new[] { "TYPE", "TRCODE" }, line.LineType >= 0 ? line.LineType : 0, true),
+                (new[] { "MASTER_CODE", "STOCK_CODE" }, line.MasterCode ?? string.Empty, true),
+                (new[] { "QUANTITY", "AMOUNT" }, line.Quantity, true),
+                (new[] { "PRICE" }, line.UnitPrice, true),
+                (new[] { "UNIT_CODE" }, string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode, true),
+                (new[] { "VAT_RATE" }, line.VatRate, true),
+                (new[] { "SOURCEINDEX", "SOURCE_WH" }, line.WarehouseNr > 0 ? line.WarehouseNr : payload.WarehouseNr, false),
+                (new[] { "SOURCECOSTGRP", "SOURCE_COST_GRP" }, line.SourceIndex > 0 ? line.SourceIndex : payload.SourceIndex, false)
             };
 
             foreach (var assignment in lineAssignments)
@@ -320,10 +365,10 @@ public sealed class LogoObjectService
                     continue;
                 }
 
-                var success = TrySetLineFieldValue(currentLine, assignment.FieldName, assignment.Value);
+                var success = TrySetFirstAvailableLineFieldValue(currentLine, assignment.FieldNames, assignment.Value);
                 if (!success && assignment.Required)
                 {
-                    errorMessage = $"{index + 1}. satır alanı yazılamadı: {assignment.FieldName}";
+                    errorMessage = $"{index + 1}. satır alanı yazılamadı: {string.Join(" / ", assignment.FieldNames)}";
                     return false;
                 }
             }
@@ -387,6 +432,19 @@ public sealed class LogoObjectService
         return TrySetMemberValue(fieldObject, "Value", value);
     }
 
+    private bool TrySetFirstAvailableDataFieldValue(object target, IEnumerable<string> fieldNames, object? value)
+    {
+        foreach (var fieldName in fieldNames)
+        {
+            if (TrySetDataFieldValue(target, fieldName, value))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private bool TrySetLineFieldValue(object lineObject, string fieldName, object? value)
     {
         var fieldObject = TryGetFieldByName(lineObject, fieldName);
@@ -396,6 +454,19 @@ public sealed class LogoObjectService
         }
 
         return TrySetMemberValue(fieldObject, "Value", value);
+    }
+
+    private bool TrySetFirstAvailableLineFieldValue(object lineObject, IEnumerable<string> fieldNames, object? value)
+    {
+        foreach (var fieldName in fieldNames)
+        {
+            if (TrySetLineFieldValue(lineObject, fieldName, value))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private object? TryGetDataFieldObject(object target, string fieldName)
