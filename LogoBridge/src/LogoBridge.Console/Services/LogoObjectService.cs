@@ -228,6 +228,41 @@ public sealed class LogoObjectService
 
     private object? TryResolveUnityEnumValue(string enumMemberName)
     {
+    var assemblyCandidates = new[]
+    {
+        "Interop.UnityObjects",
+        "UnityObjects",
+        "UnityObjects_TLB"
+    };
+
+    foreach (var assemblyName in assemblyCandidates)
+    {
+        try
+        {
+            var assembly = Assembly.Load(assemblyName);
+
+            var enumType = assembly.GetTypes()
+                .FirstOrDefault(type =>
+                    type.IsEnum &&
+                    (
+                        string.Equals(type.Name, "DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(type.FullName, "Interop.UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(type.FullName, "UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(type.FullName, "UnityObjects_TLB.DataObjectType", StringComparison.OrdinalIgnoreCase)
+                    ));
+
+            if (enumType is null)
+            {
+                continue;
+            }
+
+            return Enum.Parse(enumType, enumMemberName, ignoreCase: true);
+        }
+        catch
+        {
+        }
+    }
+
     try
     {
         var assemblies = AppDomain.CurrentDomain.GetAssemblies();
@@ -241,9 +276,12 @@ public sealed class LogoObjectService
                 enumType = assembly.GetTypes()
                     .FirstOrDefault(type =>
                         type.IsEnum &&
-                        (string.Equals(type.Name, "DataObjectType", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(type.FullName, "UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(type.FullName, "Interop.UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase)));
+                        (
+                            string.Equals(type.Name, "DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(type.FullName, "Interop.UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(type.FullName, "UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(type.FullName, "UnityObjects_TLB.DataObjectType", StringComparison.OrdinalIgnoreCase)
+                        ));
             }
             catch
             {
@@ -263,13 +301,12 @@ public sealed class LogoObjectService
             {
             }
         }
-
-        return null;
     }
     catch
     {
-        return null;
     }
+
+    return null;
     }
 
     private bool TryInitializeDataObject(object dataObject)
