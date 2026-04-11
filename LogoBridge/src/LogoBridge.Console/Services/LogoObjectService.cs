@@ -94,7 +94,7 @@ public sealed class LogoObjectService
                     payload,
                     headerFields,
                     transactionLines,
-                    "Satınalma faturası object oluşturulamadı.",
+                    "Satınalma faturası object oluşturulamadı. Unity DataObjectType enum değeri çözümlenemedi veya object açılamadı.",
                     "LOGO_DATA_OBJECT_CREATE_FAILED");
                 result.Details["data_object_create_strategy"] = creationResult.Strategy;
                 return result;
@@ -194,61 +194,82 @@ public sealed class LogoObjectService
 
     private (object? DataObject, string Strategy) TryCreatePurchaseInvoiceDataObject(object unityApplication)
     {
-        var candidateNames = new[]
-        {
-            "doPurchInvoice",
-            "doPurchaseInvoice",
-            "doPurchInv",
-            "doSalesInvoice"
-        };
+    var candidateNames = new[]
+    {
+        "doPurchInvoice",
+        "doPurchaseInvoice",
+        "doPurchInv",
+        "doSalesInvoice"
+    };
 
-        foreach (var candidateName in candidateNames)
+    var triedStrategies = new List<string>();
+
+    foreach (var candidateName in candidateNames)
+    {
+        var enumValue = TryResolveUnityEnumValue(candidateName);
+        triedStrategies.Add($"{candidateName}={(enumValue is null ? "enum_not_found" : "enum_found")}");
+
+        if (enumValue is null)
         {
-            var enumValue = TryResolveUnityEnumValue(unityApplication, candidateName);
-            if (enumValue is null)
+            continue;
+        }
+
+        var invocation = TryInvokeMethodForObject(unityApplication, "NewDataObject", enumValue);
+        if (invocation.MethodFound && invocation.ReturnValue is not null)
+        {
+            return (invocation.ReturnValue, $"NewDataObject({candidateName})");
+        }
+
+        triedStrategies.Add($"invoke_failed:{candidateName}");
+    }
+
+    return (null, string.Join(" | ", triedStrategies));
+    }
+
+    private object? TryResolveUnityEnumValue(string enumMemberName)
+    {
+    try
+    {
+        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+        foreach (var assembly in assemblies)
+        {
+            Type? enumType = null;
+
+            try
+            {
+                enumType = assembly.GetTypes()
+                    .FirstOrDefault(type =>
+                        type.IsEnum &&
+                        (string.Equals(type.Name, "DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(type.FullName, "UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(type.FullName, "Interop.UnityObjects.DataObjectType", StringComparison.OrdinalIgnoreCase)));
+            }
+            catch
             {
                 continue;
             }
 
-            var invocation = TryInvokeMethodForObject(unityApplication, "NewDataObject", enumValue);
-            if (invocation.MethodFound && invocation.ReturnValue is not null)
-            {
-                return (invocation.ReturnValue, $"NewDataObject({candidateName})");
-            }
-        }
-
-        var numericCandidates = new[] { 1, 8 };
-        foreach (var numericCandidate in numericCandidates)
-        {
-            var invocation = TryInvokeMethodForObject(unityApplication, "NewDataObject", numericCandidate);
-            if (invocation.MethodFound && invocation.ReturnValue is not null)
-            {
-                return (invocation.ReturnValue, $"NewDataObject({numericCandidate})");
-            }
-        }
-
-        return (null, string.Empty);
-    }
-
-    private object? TryResolveUnityEnumValue(object unityApplication, string enumMemberName)
-    {
-        try
-        {
-            var assembly = unityApplication.GetType().Assembly;
-            var enumType = assembly.GetTypes()
-                .FirstOrDefault(type => type.IsEnum && string.Equals(type.Name, "DataObjectType", StringComparison.OrdinalIgnoreCase));
-
             if (enumType is null)
             {
-                return null;
+                continue;
             }
 
-            return Enum.Parse(enumType, enumMemberName, ignoreCase: true);
+            try
+            {
+                return Enum.Parse(enumType, enumMemberName, ignoreCase: true);
+            }
+            catch
+            {
+            }
         }
-        catch
-        {
-            return null;
-        }
+
+        return null;
+    }
+    catch
+    {
+        return null;
+    }
     }
 
     private bool TryInitializeDataObject(object dataObject)
