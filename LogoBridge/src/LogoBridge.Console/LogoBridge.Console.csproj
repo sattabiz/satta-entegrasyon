@@ -26,15 +26,10 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <COMReference Include="UnityObjects">
-      <WrapperTool>tlbimp</WrapperTool>
-      <VersionMinor>0</VersionMinor>
-      <VersionMajor>1</VersionMajor>
-      <Guid>51f6657d-9972-45fd-8d5d-98849802a9c9</Guid>
-      <Lcid>0</Lcid>
-      <Isolated>false</Isolated>
+    <Reference Include="UnityObjects">
+      <HintPath>lib\Interop.UnityObjects.dll</HintPath>
       <EmbedInteropTypes>False</EmbedInteropTypes>
       <Private>True</Private>
-    </COMReference>
+    </Reference>
   </ItemGroup>
 </Project>

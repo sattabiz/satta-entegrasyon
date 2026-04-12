@@ -92,6 +92,7 @@ Output/
 **/.vs/
 bin/
 obj/
+lib/
 *.user
 *.rsuser
 *.suo

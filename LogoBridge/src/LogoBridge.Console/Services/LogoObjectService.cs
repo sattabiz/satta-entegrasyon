@@ -149,7 +149,7 @@ public sealed class LogoObjectService
 
             TryFillAccCodes(dataObject);
 
-            var postSucceeded = TryPostDataObject(dataObject);
+            var postSucceeded = TryPostDataObject(dataObject, unityApplication, out var postError);
             if (!postSucceeded)
             {
                 var result = BuildLogoFailureResult(
@@ -160,6 +160,7 @@ public sealed class LogoObjectService
                     transactionLines,
                     "Satınalma faturası Logo'ya kaydedilemedi.",
                     "LOGO_POST_FAILED");
+                result.Details["post_error_desc"] = postError;
                 result.Details["data_object_create_strategy"] = creationResult.Strategy;
                 return result;
             }
@@ -230,120 +231,83 @@ public sealed class LogoObjectService
         return true;
     }
 
-    private bool TryMapHeaderFields(object dataObject, InvoicePayload payload, out string errorMessage)
+    private bool TryMapHeaderFields(dynamic dataObject, InvoicePayload payload, out string errorMessage)
     {
-        var typeCode = ReadOptionalPayloadInt(payload, "LogoInvoiceType", "InvoiceTypeCode");
-        if (typeCode <= 0)
+        try
         {
-            typeCode = 1;
+            var typeCode = ReadOptionalPayloadInt(payload, "LogoInvoiceType", "InvoiceTypeCode");
+            if (typeCode <= 0) typeCode = 1;
+
+            dataObject.DataFields.FieldByName("TYPE").Value = typeCode;
+            dataObject.DataFields.FieldByName("NUMBER").Value = string.IsNullOrWhiteSpace(payload.InvoiceNumber) ? "~" : payload.InvoiceNumber;
+            
+            if (!string.IsNullOrWhiteSpace(payload.DocumentNumber))
+                dataObject.DataFields.FieldByName("DOC_NUMBER").Value = payload.DocumentNumber;
+                
+            dataObject.DataFields.FieldByName("AUXIL_CODE").Value = ReadOptionalPayloadString(payload, "AuxiliaryCode", "AUTO");
+            
+            var docDateStr = payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty;
+            dataObject.DataFields.FieldByName("DATE").Value = docDateStr;
+            dataObject.DataFields.FieldByName("DOC_DATE").Value = docDateStr;
+            
+            dataObject.DataFields.FieldByName("TIME").Value = ResolveLogoPackedTime(payload.DocumentTime);
+            dataObject.DataFields.FieldByName("ARP_CODE").Value = payload.ArpCode ?? string.Empty;
+            
+            var paymentCode = ReadOptionalPayloadString(payload, "PaymentCode", string.Empty);
+            if (!string.IsNullOrWhiteSpace(paymentCode))
+                dataObject.DataFields.FieldByName("PAYMENT_CODE").Value = paymentCode;
+
+            dataObject.DataFields.FieldByName("NOTES1").Value = payload.Description ?? string.Empty;
+            dataObject.DataFields.FieldByName("SOURCE_WH").Value = payload.WarehouseNr;
+            dataObject.DataFields.FieldByName("DIVISION").Value = payload.Division;
+            dataObject.DataFields.FieldByName("DEPARTMENT").Value = payload.Department;
+
+            errorMessage = string.Empty;
+            return true;
         }
-
-        var headerAssignments = new List<(string[] FieldNames, object? Value, bool Required)>
+        catch (Exception ex)
         {
-            (new[] { "TYPE", "TRCODE" }, typeCode, true),
-            (new[] { "NUMBER", "FICHENO" }, string.IsNullOrWhiteSpace(payload.InvoiceNumber) ? "~" : payload.InvoiceNumber, true),
-            (new[] { "DOC_NUMBER", "DOCODE" }, payload.DocumentNumber ?? string.Empty, false),
-            (new[] { "AUXIL_CODE", "SPECODE" }, ReadOptionalPayloadString(payload, "AuxiliaryCode", "AUTO"), false),
-            (new[] { "DATE", "DATE_" }, payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty, true),
-            (new[] { "DOC_DATE" }, payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty, false),
-            (new[] { "TIME" }, ResolveLogoPackedTime(payload.DocumentTime), true),
-            (new[] { "ARP_CODE" }, payload.ArpCode ?? string.Empty, true),
-            (new[] { "POST_FLAGS" }, 247, false),
-            (new[] { "PAYMENT_CODE" }, ReadOptionalPayloadString(payload, "PaymentCode", string.Empty), false),
-            (new[] { "SALESMAN_CODE" }, ReadOptionalPayloadString(payload, "SalesmanCode", string.Empty), false),
-            (new[] { "NOTES1", "GENEXP1" }, payload.Description ?? string.Empty, false),
-            (new[] { "SOURCE_WH" }, payload.WarehouseNr, false),
-            (new[] { "DIVISION", "BRANCH" }, payload.Division, false),
-            (new[] { "DEPARTMENT" }, payload.Department, false)
-        };
-
-        foreach (var assignment in headerAssignments)
-        {
-            if (!assignment.Required && IsEmptyValue(assignment.Value))
-            {
-                continue;
-            }
-
-            var success = TrySetFirstAvailableDataFieldValue(dataObject, assignment.FieldNames, assignment.Value);
-            if (!success && assignment.Required)
-            {
-                errorMessage = $"Header alanı yazılamadı: {string.Join(" / ", assignment.FieldNames)}";
-                return false;
-            }
+            errorMessage = $"Header mapping failed: {ex.Message}";
+            return false;
         }
-
-        errorMessage = string.Empty;
-        return true;
     }
 
-    private bool TryMapTransactionLines(object dataObject, InvoicePayload payload, out string errorMessage)
+    private bool TryMapTransactionLines(dynamic dataObject, InvoicePayload payload, out string errorMessage)
     {
-        var transactionsField = TryGetDataFieldObject(dataObject, "TRANSACTIONS");
-        if (transactionsField is null)
+        try
         {
-            errorMessage = "TRANSACTIONS alanı bulunamadı.";
+            dynamic transactionsField = dataObject.DataFields.FieldByName("TRANSACTIONS");
+            dynamic linesObject = transactionsField.Lines;
+
+            for (var index = 0; index < payload.Lines.Count; index++)
+            {
+                linesObject.AppendLine();
+                dynamic currentLine = linesObject[index];
+                var line = payload.Lines[index];
+
+                currentLine.FieldByName("TYPE").Value = (short)(line.LineType >= 0 ? line.LineType : 0);
+                currentLine.FieldByName("MASTER_CODE").Value = line.MasterCode ?? string.Empty;
+                currentLine.FieldByName("QUANTITY").Value = (double)(line.Quantity > 0 ? line.Quantity : 1.0m);
+                currentLine.FieldByName("PRICE").Value = (double)line.UnitPrice;
+                currentLine.FieldByName("VAT_RATE").Value = (double)(line.VatRate >= 0 ? line.VatRate : 0m);
+                currentLine.FieldByName("UNIT_CODE").Value = string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode;
+                currentLine.FieldByName("UNIT_CONV1").Value = (double)1.0;
+                currentLine.FieldByName("UNIT_CONV2").Value = (double)1.0;
+                
+                if (line.WarehouseNr > 0)
+                    currentLine.FieldByName("SOURCEINDEX").Value = line.WarehouseNr;
+                else
+                    currentLine.FieldByName("SOURCEINDEX").Value = payload.WarehouseNr;
+            }
+
+            errorMessage = string.Empty;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Line mapping failed: {ex.Message}";
             return false;
         }
-
-        var linesObject = TryGetMemberValue(transactionsField, "Lines");
-        if (linesObject is null)
-        {
-            errorMessage = "TRANSACTIONS.Lines erişilemedi.";
-            return false;
-        }
-
-        for (var index = 0; index < payload.Lines.Count; index++)
-        {
-            var appendInvocation = TryInvokeMethod(linesObject, "AppendLine", Array.Empty<object>());
-            if (!appendInvocation.MethodFound)
-            {
-                appendInvocation = TryInvokeMethod(linesObject, "Append", Array.Empty<object>());
-            }
-
-            if (!appendInvocation.MethodFound || !appendInvocation.Success)
-            {
-                errorMessage = $"{index + 1}. satır eklenemedi.";
-                return false;
-            }
-
-            var currentLine = TryGetLineByIndex(linesObject, index);
-            if (currentLine is null)
-            {
-                errorMessage = $"{index + 1}. satır referansı alınamadı.";
-                return false;
-            }
-
-            var line = payload.Lines[index];
-            var lineAssignments = new List<(string[] FieldNames, object? Value, bool Required)>
-            {
-                (new[] { "TYPE", "TRCODE" }, line.LineType >= 0 ? line.LineType : 0, true),
-                (new[] { "MASTER_CODE", "STOCK_CODE" }, line.MasterCode ?? string.Empty, true),
-                (new[] { "QUANTITY", "AMOUNT" }, line.Quantity, true),
-                (new[] { "PRICE" }, line.UnitPrice, true),
-                (new[] { "UNIT_CODE" }, string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode, true),
-                (new[] { "VAT_RATE" }, line.VatRate, true),
-                (new[] { "SOURCEINDEX", "SOURCE_WH" }, line.WarehouseNr > 0 ? line.WarehouseNr : payload.WarehouseNr, false),
-                (new[] { "SOURCECOSTGRP", "SOURCE_COST_GRP" }, line.SourceIndex > 0 ? line.SourceIndex : payload.SourceIndex, false)
-            };
-
-            foreach (var assignment in lineAssignments)
-            {
-                if (!assignment.Required && IsEmptyValue(assignment.Value))
-                {
-                    continue;
-                }
-
-                var success = TrySetFirstAvailableLineFieldValue(currentLine, assignment.FieldNames, assignment.Value);
-                if (!success && assignment.Required)
-                {
-                    errorMessage = $"{index + 1}. satır alanı yazılamadı: {string.Join(" / ", assignment.FieldNames)}";
-                    return false;
-                }
-            }
-        }
-
-        errorMessage = string.Empty;
-        return true;
     }
 
     private object? TryGetLineByIndex(object linesObject, int index)
@@ -378,10 +342,52 @@ public sealed class LogoObjectService
         }
     }
 
-    private bool TryPostDataObject(object dataObject)
+    private bool TryPostDataObject(dynamic dataObject, dynamic unityApplication, out string errorMessage)
     {
-        var postInvocation = TryInvokeMethod(dataObject, "Post", Array.Empty<object>());
-        return postInvocation.MethodFound && postInvocation.Success;
+        try
+        {
+            dynamic dynData = dataObject;
+            bool isSuccess = dynData.Post();
+            if (isSuccess)
+            {
+                errorMessage = string.Empty;
+                return true;
+            }
+
+            var errorCode = dynData.ErrorCode;
+            var errorDesc = dynData.ErrorDesc;
+            
+            var detailedError = $"[Code: {errorCode}] {errorDesc}";
+            
+            try 
+            {
+                var dbError1 = unityApplication.GetLastErrorString();
+                if (!string.IsNullOrWhiteSpace((string)dbError1)) detailedError += $" | AppErr: {dbError1}";
+            } catch { }
+
+            try 
+            {
+                var dbError2 = unityApplication.GetLastDBObjectError();
+                if (!string.IsNullOrWhiteSpace((string)dbError2)) detailedError += $" | DBErr: {dbError2}";
+            } catch { }
+            
+            try 
+            {
+                var validationErrors = dynData.ValidateErrors;
+                if (validationErrors != null && validationErrors.Count > 0)
+                {
+                    detailedError += " | Validation: " + validationErrors[0].Error;
+                }
+            } catch { }
+
+            errorMessage = detailedError;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Post exception: {ex.Message}";
+            return false;
+        }
     }
 
     private void TryFillAccCodes(object dataObject)
