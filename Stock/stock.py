@@ -142,8 +142,8 @@ class StockTab(QWidget):
         self.stock_table.itemSelectionChanged.connect(self.update_edit_button_text)
         self.stock_table.itemChanged.connect(self.handle_table_item_changed)
         self.update_edit_button_text()
-
-        self.load_sample_data()
+        
+        # self.load_sample_data() # UI ilk açıldığında gösterilen mock (A4 kağıt vb) kapatıldı.
 
     def load_products(self):
         try:
@@ -396,6 +396,7 @@ class StockTab(QWidget):
 
     def get_selected_products(self):
         selected_products = []
+        invalid_products = []
 
         selected_cost_center_erp_id = str(self.source_combo.currentData() or "").strip()
         selected_category = self.target_combo.currentText().strip()
@@ -416,6 +417,15 @@ class StockTab(QWidget):
             currency_item = self.stock_table.item(row, 9)
             description_item = self.stock_table.item(row, 12)
 
+            product_code = product_code_item.text().strip() if product_code_item else ""
+            product_name = product_name_item.text().strip() if product_name_item else "-"
+            unit_text = unit_item.text().strip() if unit_item else ""
+
+            if not unit_text:
+                product_label = product_code or product_name
+                invalid_products.append(f"{product_label} -> Eksik alan: Birim")
+                continue
+
             row_category = category_item.text().strip() if category_item else ""
             category_text = selected_category if selected_category not in invalid_category_values else row_category
 
@@ -424,25 +434,25 @@ class StockTab(QWidget):
                 cost_center_ids = [selected_cost_center_erp_id]
 
             product_data = {
-                "product_name": product_name_item.text().strip() if product_name_item else "-",
+                "product_name": product_name,
                 "description": description_item.text().strip() if description_item else "",
                 "category_text": category_text,
-                "erp_id": product_code_item.text().strip() if product_code_item else "",
-                "unit": unit_item.text().strip() if unit_item else "AD",
+                "erp_id": product_code,
+                "unit": unit_text,
                 "tax_rate": self.parse_tax_rate(tax_rate_item.text() if tax_rate_item else "0"),
                 "price": self.parse_number(price_item.text() if price_item else "0"),
                 "currency": currency_item.text().strip() if currency_item else "TRY",
-                "max_quantity": 0,
-                "min_quantity": 0,
-                "quantity_tolerance": 0,
+                "max_quantity": None,
+                "min_quantity": None,
+                "quantity_tolerance": None,
                 "notes": "",
                 "cost_center_erp_ids": cost_center_ids,
                 "un_no": "",
-                "erp_code": product_code_item.text().strip() if product_code_item else "",
+                "erp_code": product_code,
             }
             selected_products.append(product_data)
 
-        return selected_products
+        return selected_products, invalid_products
 
     def parse_tax_rate(self, value):
         text = str(value).strip().replace("%", "").replace(",", ".")
@@ -459,9 +469,19 @@ class StockTab(QWidget):
             return 0
 
     def transfer_selected_products(self):
-        selected_products = self.get_selected_products()
+        selected_products, invalid_products = self.get_selected_products()
+
+        if invalid_products:
+            missing_text = "\n".join(invalid_products)
+            QMessageBox.warning(
+                self,
+                "Eksik Zorunlu Alan",
+                f"Aşağıdaki ürünler aktarılmadı çünkü Birim bilgileri Logo'da eksik (veya tabloda boş):\n\n{missing_text}\n\nLütfen Logo ERP veya Satta Entegrasyon tablosu üzerinden boş olan birimleri düzeltip tekrar deneyin.",
+            )
+            return
+
         if not selected_products:
-            QMessageBox.warning(self, "Seçim Yok", "Önce aktarılacak ürünleri seç.")
+            QMessageBox.warning(self, "Seçim Yok", "Önce aktarılacak (ve birimi girilmiş) ürünleri seç.")
             return
 
         connector = SattaProductPushConnector()

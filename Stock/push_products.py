@@ -42,9 +42,9 @@ class SattaProductPushConnector:
                     "tax_rate": self._to_number(product.get("tax_rate"), default=0),
                     "price": self._to_number(product.get("price"), default=0),
                     "currency": self._safe_text(product.get("currency")),
-                    "max_quantity": self._to_number(product.get("max_quantity"), default=0),
-                    "min_quantity": self._to_number(product.get("min_quantity"), default=0),
-                    "quantity_tolerance": self._to_number(product.get("quantity_tolerance"), default=0),
+                    "max_quantity": self._to_number(product.get("max_quantity"), default=None),
+                    "min_quantity": self._to_number(product.get("min_quantity"), default=None),
+                    "quantity_tolerance": self._to_number(product.get("quantity_tolerance"), default=None),
                     "notes": self._safe_text(product.get("notes")),
                     "cost_center_erp_ids": self._normalize_cost_center_ids(product.get("cost_center_erp_ids")),
                     "un_no": self._safe_text(product.get("un_no")),
@@ -149,7 +149,7 @@ class SattaProductPushConnector:
         text = self._safe_text(value)
         return [text] if text else []
 
-    def _to_number(self, value: Any, default: Union[int, float] = 0) -> Union[int, float]:
+    def _to_number(self, value: Any, default: Any = 0) -> Any:
         if value is None or value == "":
             return default
 

@@ -1,13 +1,13 @@
 
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from Invoice.logo_bridge_runner import LogoBridgeRunner
 from Invoice.logo_payload_builder import LogoPayloadBuilder
 
 
 class LogoTransferService:
-    def __init__(self, logo_settings: Dict[str, Any], bridge_runner: LogoBridgeRunner | None = None):
+    def __init__(self, logo_settings: Dict[str, Any], bridge_runner: Optional[LogoBridgeRunner] = None):
         self.logo_settings = logo_settings or {}
         self.payload_builder = LogoPayloadBuilder(self.logo_settings)
         self.bridge_runner = bridge_runner or LogoBridgeRunner()
@@ -76,7 +76,7 @@ class LogoTransferService:
         return text
 
     @staticmethod
-    def _to_int(value: Any) -> int | None:
+    def _to_int(value: Any) -> Optional[int]:
         try:
             if value is None or str(value).strip() == "":
                 return None

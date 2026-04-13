@@ -107,15 +107,22 @@ class ProductReader:
     def _read_from_sql(self) -> List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str]]:
         conn_str = self._build_connection_string()
         items_table = self._build_items_table_name()
+        firm_str = f"{self.config.firm_no:03d}"
+        unitsetl_table = f"LG_{firm_str}_UNITSETL"
 
-        # İlk faz için minimum alan seti çekiyoruz.
-        # Gerçek UI kolonları netleştiğinde sorgu genişletilecek.
         query = f"""
         SELECT
             ISNULL(I.CODE, '') AS product_code,
             ISNULL(I.NAME, '') AS product_name,
-            CAST(ISNULL(I.VAT, 0) AS NVARCHAR(10)) AS vat_rate
+            CAST(ISNULL(I.VAT, 0) AS NVARCHAR(10)) AS vat_rate,
+            ISNULL(U.CODE, '') AS unit_name
         FROM {items_table} I WITH (NOLOCK)
+        OUTER APPLY (
+            SELECT TOP 1 CODE 
+            FROM {unitsetl_table} WITH (NOLOCK) 
+            WHERE UNITSETREF = I.UNITSETREF 
+            ORDER BY LINENR
+        ) U
         WHERE ISNULL(I.ACTIVE, 0) = 0
         ORDER BY I.CODE
         """
@@ -131,13 +138,14 @@ class ProductReader:
                     product_code = str(row[0]).strip() if row[0] is not None else ""
                     product_name = str(row[1]).strip() if row[1] is not None else ""
                     vat_rate = str(row[2]).strip() if row[2] is not None else "0"
+                    unit_name = str(row[3]).strip() if len(row) > 3 and row[3] is not None else ""
 
                     result.append(
                         (
                             product_code,
                             product_name,
                             "",
-                            "",
+                            unit_name,
                             "",
                             "",
                             vat_rate,
