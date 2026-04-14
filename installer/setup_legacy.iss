@@ -67,7 +67,7 @@ var
 begin
   SelectedConnector := GetSelectedConnector();
 
-  UserDataDir := ExpandConstant('{localappdata}\Satta\{#MyAppDirName}');
+  UserDataDir := ExpandConstant('{commonappdata}\Satta\{#MyAppDirName}');
   if not DirExists(UserDataDir) then
     ForceDirectories(UserDataDir);
 

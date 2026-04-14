@@ -17,6 +17,15 @@ def get_base_dir() -> Path:
         return Path(sys._MEIPASS)
     return Path(__file__).resolve().parent.parent
 
+def get_exe_dir() -> Path:
+    """
+    Çalıştırılan asıl `.exe` dosyasının fiziksel olarak bulunduğu klasörü döndürür.
+    Portable kurulum ve network kopyalamaları (Drag & drop güncelleme) için kullanılır.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent.parent
+
 
 def project_path(*parts) -> Path:
     """
@@ -61,6 +70,30 @@ def user_data_path(*parts) -> Path:
         user_data_path("satta_session.json")
     """
     return get_user_data_dir().joinpath(*parts)
+
+def get_global_data_dir() -> Path:
+    """
+    Tüm kullanıcılar (All Users) için paylaşılan Global veri klasörünü döndürür.
+    Windows:
+        %PROGRAMDATA%\\Satta\\SattaEntegrasyon
+    macOS:
+        /Library/Application Support/Satta/SattaEntegrasyon
+    Linux:
+        /usr/share/Satta/SattaEntegrasyon
+    """
+    if sys.platform.startswith("win"):
+        program_data = os.environ.get("PROGRAMDATA")
+        if program_data:
+            return Path(program_data) / APP_VENDOR / APP_NAME
+        return Path("C:/ProgramData") / APP_VENDOR / APP_NAME
+
+    if sys.platform == "darwin":
+        return Path("/Library/Application Support") / APP_VENDOR / APP_NAME
+
+    return Path("/usr/share") / APP_VENDOR / APP_NAME
+
+def global_data_path(*parts) -> Path:
+    return get_global_data_dir().joinpath(*parts)
 
 
 def ensure_directory(path_obj: Path):

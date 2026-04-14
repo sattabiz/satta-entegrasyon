@@ -145,12 +145,25 @@ DEFAULT_RUNTIME_FILES = {
 
 
 def load_runtime_config() -> dict:
-    runtime_config_file = user_data_path("runtime_config.json")
-    if not runtime_config_file.exists():
+    from Common.path_helper import global_data_path, get_exe_dir
+    
+    exe_config_file = get_exe_dir().joinpath("runtime_config.json")
+    global_config_file = global_data_path("runtime_config.json")
+    user_config_file = user_data_path("runtime_config.json")
+    
+    target_file = None
+    if exe_config_file.exists():
+        target_file = exe_config_file
+    elif global_config_file.exists():
+        target_file = global_config_file
+    elif user_config_file.exists():
+        target_file = user_config_file
+
+    if not target_file:
         return dict(DEFAULT_RUNTIME_FILES["runtime_config.json"])
 
     try:
-        runtime_config = json.loads(runtime_config_file.read_text(encoding="utf-8"))
+        runtime_config = json.loads(target_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return dict(DEFAULT_RUNTIME_FILES["runtime_config.json"])
 
