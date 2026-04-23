@@ -132,15 +132,12 @@ class InvoiceTransferTab(QWidget):
 
 
     def load_active_connector(self):
-        if not RUNTIME_CONFIG_FILE.exists():
-            return ""
-
         try:
-            runtime_config = json.loads(RUNTIME_CONFIG_FILE.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return ""
-
-        return str(runtime_config.get("active_connector", "")).strip().lower()
+            from main import load_runtime_config
+            runtime_config = load_runtime_config()
+            return str(runtime_config.get("active_connector", "logo")).strip().lower()
+        except Exception:
+            return "logo"
 
     def get_connector_display_name(self):
         return CONNECTOR_DISPLAY_NAMES.get(self.active_connector, "Hedef Sistem")

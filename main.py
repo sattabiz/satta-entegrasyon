@@ -146,26 +146,33 @@ DEFAULT_RUNTIME_FILES = {
 
 def load_runtime_config() -> dict:
     from Common.path_helper import global_data_path, get_exe_dir
-    
+    import os
+
     exe_config_file = get_exe_dir().joinpath("runtime_config.json")
     global_config_file = global_data_path("runtime_config.json")
     user_config_file = user_data_path("runtime_config.json")
     
-    target_file = None
-    if exe_config_file.exists():
-        target_file = exe_config_file
-    elif global_config_file.exists():
-        target_file = global_config_file
-    elif user_config_file.exists():
-        target_file = user_config_file
+    def try_load_valid_config(file_path) -> dict:
+        if not file_path or not file_path.exists():
+            return None
+        try:
+            config = json.loads(file_path.read_text(encoding="utf-8"))
+            if str(config.get("active_connector", "")).strip():
+                return config
+        except (json.JSONDecodeError, OSError):
+            pass
+        return None
 
-    if not target_file:
-        return dict(DEFAULT_RUNTIME_FILES["runtime_config.json"])
+    runtime_config = try_load_valid_config(exe_config_file)
+    
+    if not runtime_config:
+        runtime_config = try_load_valid_config(global_config_file)
+        
+    if not runtime_config:
+        runtime_config = try_load_valid_config(user_config_file)
 
-    try:
-        runtime_config = json.loads(target_file.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return dict(DEFAULT_RUNTIME_FILES["runtime_config.json"])
+    if not runtime_config:
+        runtime_config = dict(DEFAULT_RUNTIME_FILES["runtime_config.json"])
 
     return deep_merge_defaults(DEFAULT_RUNTIME_FILES["runtime_config.json"], runtime_config)
 
