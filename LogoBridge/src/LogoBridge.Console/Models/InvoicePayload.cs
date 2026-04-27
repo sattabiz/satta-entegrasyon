@@ -113,10 +113,11 @@ public sealed class InvoicePayload
             throw new InvalidOperationException("document_date zorunludur.");
         }
 
-        if (Lines.Count == 0)
-        {
-            throw new InvalidOperationException("En az bir fatura satırı olmalıdır.");
-        }
+        // Boş fatura (0 satırlı) aktarımına izin verildiği için aşağıdaki kontrol kaldırıldı
+        // if (Lines.Count == 0)
+        // {
+        //     throw new InvalidOperationException("En az bir fatura satırı olmalıdır.");
+        // }
 
         for (var i = 0; i < Lines.Count; i++)
         {

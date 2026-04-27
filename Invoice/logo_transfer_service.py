@@ -52,9 +52,16 @@ class LogoTransferService:
             
             details = bridge_result.get("details", {})
             if isinstance(details, dict):
-                specific_error = details.get("post_error_desc") or details.get("line_mapping_error") or details.get("header_mapping_error") or details.get("error")
+                specific_error = (
+                    details.get("post_error_desc") or 
+                    details.get("line_mapping_error") or 
+                    details.get("header_mapping_error") or 
+                    details.get("error") or
+                    details.get("stderr") or
+                    details.get("stdout")
+                )
                 if specific_error:
-                    message += f"\nLogo Hata Detayı: {specific_error}"
+                    message += f"\n\nHata Detayı: {specific_error}"
 
             if is_success:
                 if invoice_id is not None:

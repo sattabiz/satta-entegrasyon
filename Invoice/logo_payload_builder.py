@@ -71,10 +71,8 @@ class LogoPayloadBuilder:
 
             product_code = self._resolve_product_code(product)
             if not product_code:
-                raise ValueError(
-                    f"{index}. satır için ürün ERP kodu bulunamadı. "
-                    "company_product_erp_id veya erp_id alanı gerekli."
-                )
+                # Eşleşmeyen (ERP kodu olmayan) kalemleri faturaya yazmamak için atla
+                continue
 
             quantity = self._to_float(product.get("shipped_amount"))
             if quantity <= 0:
@@ -108,8 +106,9 @@ class LogoPayloadBuilder:
             }
             lines.append(line_payload)
 
-        if not lines:
-            raise ValueError("Fatura içinde aktarılacak ürün satırı bulunamadı.")
+        # Boş (0 satırlı) faturaya izin vermek için satır kontrolü kaldırıldı
+        # if not lines:
+        #     raise ValueError("Fatura içinde aktarılacak ürün satırı bulunamadı.")
 
         return lines
 
