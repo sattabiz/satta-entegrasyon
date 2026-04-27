@@ -114,19 +114,18 @@ class LogoPayloadBuilder:
 
     def _resolve_product_code(self, product: Dict[str, Any]) -> str:
         product_code = self._safe_text(product.get("company_product_erp_id"))
-        if product_code:
+        
+        # İstek: Eğer kod "SAT-" ile başlıyorsa veya boşsa (null ise), öncelikli olarak category_erp_code kullan
+        if not product_code or product_code.startswith("SAT-"):
+            category_code = self._safe_text(product.get("category_erp_code"))
+            if category_code:
+                return category_code
+
+        if product_code and not product_code.startswith("SAT-"):
             return product_code
 
-        product_code = self._safe_text(product.get("erp_id"))
-        if product_code:
-            return product_code
-
-        product_code = self._safe_text(product.get("company_product_erp_code"))
-        if product_code:
-            return product_code
-
-        product_code = self._safe_text(product.get("product_erp_id"))
-        if product_code:
+        product_code = self._safe_text(product.get("company_product_erp_id"))
+        if product_code and not product_code.startswith("SAT-"):
             return product_code
 
         return ""
