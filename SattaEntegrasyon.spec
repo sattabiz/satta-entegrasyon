@@ -14,6 +14,7 @@ a = Analysis(
         ('App_Icons/2.png', 'App_Icons'),
         ('App_Icons/exeIcon.ico', 'App_Icons'),
         ('Templates/supplierTemplate.xlsx', 'Templates'),
+        ('LogoBridge/publish', 'LogoBridge/publish'),
     ],
     hiddenimports=['openpyxl', 'et_xmlfile', 'pyodbc'],
     hookspath=[],
