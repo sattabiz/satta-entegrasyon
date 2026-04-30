@@ -17,6 +17,141 @@ public sealed class LogoObjectService
         _invoiceMapper = new InvoiceMapper();
     }
 
+    public List<BridgeResult> TransferPurchaseInvoices(List<InvoicePayload> payloads)
+    {
+        var results = new List<BridgeResult>();
+        if (payloads == null || payloads.Count == 0) return results;
+
+        object? unityApplication = null;
+        try
+        {
+            unityApplication = CreateUnityApplication();
+            var connectSucceeded = CallBooleanMethod(unityApplication, "Connect");
+            if (!connectSucceeded)
+            {
+                results.Add(BridgeResult.Failure("Logo Objects Connect başarısız oldu.", "LOGO_CONNECT_FAILED"));
+                return results;
+            }
+
+            var firstPayload = payloads[0];
+            if (!TryUserLogin(unityApplication, firstPayload))
+            {
+                results.Add(BridgeResult.Failure("Logo kullanıcı girişi başarısız oldu.", "LOGO_USER_LOGIN_FAILED"));
+                return results;
+            }
+            if (!TryCompanyLogin(unityApplication, firstPayload))
+            {
+                results.Add(BridgeResult.Failure("Logo firma girişi başarısız oldu.", "LOGO_COMPANY_LOGIN_FAILED"));
+                return results;
+            }
+
+            foreach (var payload in payloads)
+            {
+                var result = TransferSinglePurchaseInvoice(unityApplication, payload);
+                results.Add(result);
+            }
+        }
+        catch (Exception ex)
+        {
+            var result = BridgeResult.Failure($"Toplu işlem sırasında hata: {ex.Message}", "BATCH_EXCEPTION");
+            result.Details["exception_type"] = ex.GetType().Name;
+            results.Add(result);
+        }
+        finally
+        {
+            SafeLogoutAndDisconnect(unityApplication);
+        }
+
+        return results;
+    }
+
+    private BridgeResult TransferSinglePurchaseInvoice(object unityApplication, InvoicePayload payload)
+    {
+        object? dataObject = null;
+        try
+        {
+            if (payload is null) return BridgeResult.Failure("Invoice payload boş olamaz.", "PAYLOAD_NULL");
+
+            payload.Validate();
+            var validationErrors = ValidateBusinessRules(payload);
+            if (validationErrors.Count > 0)
+            {
+                return BridgeResult.Failure("Payload iş kuralları doğrulamasından geçemedi.", "BUSINESS_VALIDATION_FAILED", validationErrors);
+            }
+
+            var headerFields = _invoiceMapper.MapHeaderFields(payload);
+            var transactionLines = _invoiceMapper.MapTransactionLines(payload);
+
+            var creationResult = TryCreatePurchaseInvoiceDataObject(unityApplication);
+            dataObject = creationResult.DataObject;
+            if (dataObject is null)
+            {
+                var result = BuildLogoFailureResult(unityApplication, dataObject, payload, headerFields, transactionLines,
+                    "Satınalma faturası object oluşturulamadı.", "LOGO_DATA_OBJECT_CREATE_FAILED");
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            if (!TryInitializeDataObject(dataObject))
+            {
+                var result = BuildLogoFailureResult(unityApplication, dataObject, payload, headerFields, transactionLines,
+                    "Satınalma faturası object başlatılamadı.", "LOGO_DATA_OBJECT_INIT_FAILED");
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            if (!TryMapHeaderFields(dataObject, payload, out var headerError))
+            {
+                var result = BuildLogoFailureResult(unityApplication, dataObject, payload, headerFields, transactionLines,
+                    "Fatura üst bilgileri yazılamadı.", "LOGO_HEADER_MAPPING_FAILED");
+                result.Details["header_mapping_error"] = headerError;
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            if (!TryMapTransactionLines(dataObject, payload, out var lineError))
+            {
+                var result = BuildLogoFailureResult(unityApplication, dataObject, payload, headerFields, transactionLines,
+                    "Fatura satırları yazılamadı.", "LOGO_LINE_MAPPING_FAILED");
+                result.Details["line_mapping_error"] = lineError;
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            TryFillAccCodes(dataObject);
+
+            if (!TryPostDataObject(dataObject, unityApplication, out var postError))
+            {
+                var result = BuildLogoFailureResult(unityApplication, dataObject, payload, headerFields, transactionLines,
+                    "Fatura Logo'ya kaydedilemedi.", "LOGO_POST_FAILED");
+                result.Details["post_error_desc"] = postError;
+                result.Details["data_object_create_strategy"] = creationResult.Strategy;
+                return result;
+            }
+
+            var resultSuccess = BridgeResult.Success(
+                message: "Satınalma faturası Logo'ya başarıyla kaydedildi.",
+                logicalRef: ReadPossibleIntPropertyOrMethod(dataObject, "InternalReference", "LogicalRef", "DATA_REFERENCE"),
+                invoiceNumber: payload.InvoiceNumber,
+                documentNumber: payload.DocumentNumber,
+                arpCode: payload.ArpCode);
+
+            AppendPayloadSummary(resultSuccess, payload);
+            AppendMappedHeaderSummary(resultSuccess, headerFields);
+            AppendMappedLineSummary(resultSuccess, transactionLines);
+            AppendLogoRuntimeDetails(resultSuccess, unityApplication, dataObject);
+            resultSuccess.Details["data_object_create_strategy"] = creationResult.Strategy;
+
+            return resultSuccess;
+        }
+        catch (Exception exception)
+        {
+            var result = BridgeResult.Failure($"Logo Objects servis hatası: {exception.Message}", "LOGO_OBJECTS_SERVICE_EXCEPTION");
+            result.Details["exception_type"] = exception.GetType().Name;
+            return result;
+        }
+    }
+
     public BridgeResult TransferPurchaseInvoice(InvoicePayload payload)
     {
         object? unityApplication = null;

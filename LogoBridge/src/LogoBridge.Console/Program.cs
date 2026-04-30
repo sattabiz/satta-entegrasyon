@@ -9,7 +9,8 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        var result = new BridgeResult();
+        var results = new System.Collections.Generic.List<BridgeResult>();
+        BridgeResult fatalResult;
         var jsonFileService = new JsonFileService();
         var logoObjectService = new LogoObjectService();
 
@@ -17,57 +18,63 @@ internal static class Program
         {
             if (args.Length == 0)
             {
-                result = BridgeResult.Failure(
+                fatalResult = BridgeResult.Failure(
                     message: "Payload dosya yolu verilmedi.",
                     errorCode: "ARGUMENT_MISSING");
-
-                WriteResult(result);
+                results.Add(fatalResult);
+                WriteResult(results);
                 return 1;
             }
 
             var payloadPath = args[0];
             if (string.IsNullOrWhiteSpace(payloadPath))
             {
-                result = BridgeResult.Failure(
+                fatalResult = BridgeResult.Failure(
                     message: "Payload dosya yolu boş olamaz.",
                     errorCode: "ARGUMENT_EMPTY");
-
-                WriteResult(result);
+                results.Add(fatalResult);
+                WriteResult(results);
                 return 1;
             }
 
-            var payload = jsonFileService.ReadFromFile<InvoicePayload>(payloadPath);
-            payload.Validate();
+            var payloads = jsonFileService.ReadFromFile<System.Collections.Generic.List<InvoicePayload>>(payloadPath);
+            foreach(var payload in payloads)
+            {
+                payload.Validate();
+            }
 
-            result = logoObjectService.TransferPurchaseInvoice(payload);
-            result.Details["payload_path"] = payloadPath;
+            results = logoObjectService.TransferPurchaseInvoices(payloads);
+            foreach(var r in results)
+            {
+                r.Details["payload_path"] = payloadPath;
+            }
 
-            WriteResult(result);
-            return result.IsSuccess ? 0 : 1;
+            WriteResult(results);
+            return results.TrueForAll(r => r.IsSuccess) ? 0 : 1;
         }
         catch (JsonException jsonException)
         {
-            result = BridgeResult.Failure(
+            fatalResult = BridgeResult.Failure(
                 message: $"Payload JSON parse edilemedi: {jsonException.Message}",
                 errorCode: "PAYLOAD_JSON_INVALID");
-            result.Details["exception_type"] = nameof(JsonException);
-
-            WriteResult(result);
+            fatalResult.Details["exception_type"] = nameof(JsonException);
+            results.Add(fatalResult);
+            WriteResult(results);
             return 1;
         }
         catch (Exception exception)
         {
-            result = BridgeResult.Failure(
+            fatalResult = BridgeResult.Failure(
                 message: exception.Message,
                 errorCode: "UNHANDLED_EXCEPTION");
-            result.Details["exception_type"] = exception.GetType().Name;
-
-            WriteResult(result);
+            fatalResult.Details["exception_type"] = exception.GetType().Name;
+            results.Add(fatalResult);
+            WriteResult(results);
             return 1;
         }
     }
 
-    private static void WriteResult(BridgeResult result)
+    private static void WriteResult(object result)
     {
         var serializerOptions = new JsonSerializerOptions
         {

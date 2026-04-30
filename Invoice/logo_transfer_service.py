@@ -21,6 +21,9 @@ class LogoTransferService:
         failed_results: List[str] = []
         bridge_results: List[Dict[str, Any]] = []
 
+        payloads = []
+        invoice_info_list = []
+
         for raw_invoice in raw_invoices:
             if not isinstance(raw_invoice, dict):
                 failed_results.append("Bilinmeyen fatura: Ham veri sözlük tipinde değil.")
@@ -31,15 +34,33 @@ class LogoTransferService:
 
             try:
                 payload = self.payload_builder.build_invoice_payload(raw_invoice)
+                payloads.append(payload)
+                invoice_info_list.append({"id": invoice_id, "no": invoice_no})
             except Exception as exc:
                 failed_results.append(f"{invoice_no}: Payload hazırlanamadı - {exc}")
-                continue
 
-            try:
-                bridge_result = self.bridge_runner.run_invoice_transfer(payload)
-            except Exception as exc:
-                failed_results.append(f"{invoice_no}: Bridge çalıştırılamadı - {exc}")
-                continue
+        if not payloads:
+            return {
+                "successful_invoice_ids": successful_invoice_ids,
+                "successful_invoice_nos": successful_invoice_nos,
+                "failed_results": failed_results,
+                "bridge_results": bridge_results,
+            }
+
+        try:
+            batch_results = self.bridge_runner.run_batch_invoice_transfer(payloads)
+        except Exception as exc:
+            failed_results.append(f"Toplu Bridge çalıştırılamadı - {exc}")
+            return {
+                "successful_invoice_ids": successful_invoice_ids,
+                "successful_invoice_nos": successful_invoice_nos,
+                "failed_results": failed_results,
+                "bridge_results": bridge_results,
+            }
+
+        for info, bridge_result in zip(invoice_info_list, batch_results):
+            invoice_id = info["id"]
+            invoice_no = info["no"]
 
             bridge_results.append({
                 "invoice_id": invoice_id,

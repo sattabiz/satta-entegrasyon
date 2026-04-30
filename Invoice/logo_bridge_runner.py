@@ -13,11 +13,11 @@ class LogoBridgeRunner:
     def __init__(self, bridge_executable_path: Optional[str] = None):
         self.bridge_executable_path = bridge_executable_path or self._resolve_bridge_executable_path()
 
-    def run_invoice_transfer(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise ValueError("Bridge payload sözlük tipinde olmalıdır.")
+    def run_batch_invoice_transfer(self, payloads: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+        if not isinstance(payloads, list):
+            raise ValueError("Bridge payloads liste tipinde olmalıdır.")
 
-        payload_file_path = self._write_payload_file(payload)
+        payload_file_path = self._write_payload_file(payloads)
 
         try:
             completed_process = subprocess.run(
@@ -41,10 +41,10 @@ class LogoBridgeRunner:
 
         result = self._parse_bridge_output(stdout_text)
 
-        if not result:
-            result = {
+        if not result or not isinstance(result, list):
+            error_result = {
                 "is_success": False,
-                "message": "Logo bridge geçerli bir JSON sonuç döndürmedi.",
+                "message": "Logo bridge geçerli bir JSON liste sonucu döndürmedi.",
                 "error_code": "BRIDGE_OUTPUT_INVALID",
                 "details": {
                     "stdout": stdout_text,
@@ -52,21 +52,23 @@ class LogoBridgeRunner:
                     "return_code": str(completed_process.returncode),
                 },
             }
-            return result
+            # Eğer beklenen liste değilse, tekil hata içeren bir liste dön
+            return [error_result]
 
-        details = result.setdefault("details", {})
-        if not isinstance(details, dict):
-            details = {}
-            result["details"] = details
+        for r in result:
+            details = r.setdefault("details", {})
+            if not isinstance(details, dict):
+                details = {}
+                r["details"] = details
 
-        details.setdefault("return_code", str(completed_process.returncode))
-        if stderr_text:
-            details.setdefault("stderr", stderr_text)
+            details.setdefault("return_code", str(completed_process.returncode))
+            if stderr_text:
+                details.setdefault("stderr", stderr_text)
 
-        if completed_process.returncode != 0 and result.get("is_success") is True:
-            result["is_success"] = False
-            result["message"] = result.get("message") or "Logo bridge hata kodu ile sonlandı."
-            result.setdefault("error_code", "BRIDGE_PROCESS_FAILED")
+            if completed_process.returncode != 0 and r.get("is_success") is True:
+                r["is_success"] = False
+                r["message"] = r.get("message") or "Logo bridge hata kodu ile sonlandı."
+                r.setdefault("error_code", "BRIDGE_PROCESS_FAILED")
 
         return result
 
@@ -84,11 +86,11 @@ class LogoBridgeRunner:
 
         return str(candidate_paths[0])
 
-    def _write_payload_file(self, payload: Dict[str, Any]) -> Path:
+    def _write_payload_file(self, payloads: list[Dict[str, Any]]) -> Path:
         temp_directory = Path(tempfile.mkdtemp(prefix="satta_logo_bridge_"))
         payload_file_path = temp_directory / "invoice_payload.json"
         payload_file_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
+            json.dumps(payloads, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         return payload_file_path
