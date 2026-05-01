@@ -4,7 +4,7 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from Common.path_helper import project_path, user_data_path
 
@@ -13,7 +13,7 @@ class LogoBridgeRunner:
     def __init__(self, bridge_executable_path: Optional[str] = None):
         self.bridge_executable_path = bridge_executable_path or self._resolve_bridge_executable_path()
 
-    def run_batch_invoice_transfer(self, payloads: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    def run_batch_invoice_transfer(self, payloads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not isinstance(payloads, list):
             raise ValueError("Bridge payloads liste tipinde olmalıdır.")
 
@@ -86,7 +86,7 @@ class LogoBridgeRunner:
 
         return str(candidate_paths[0])
 
-    def _write_payload_file(self, payloads: list[Dict[str, Any]]) -> Path:
+    def _write_payload_file(self, payloads: List[Dict[str, Any]]) -> Path:
         temp_directory = Path(tempfile.mkdtemp(prefix="satta_logo_bridge_"))
         payload_file_path = temp_directory / "invoice_payload.json"
         payload_file_path.write_text(
@@ -105,16 +105,16 @@ class LogoBridgeRunner:
         except OSError:
             pass
 
-    def _parse_bridge_output(self, stdout_text: str) -> Dict[str, Any]:
+    def _parse_bridge_output(self, stdout_text: str) -> Any:
         if not stdout_text:
-            return {}
+            return None
 
         try:
             parsed_output = json.loads(stdout_text)
         except json.JSONDecodeError:
-            return {}
+            return None
 
-        if not isinstance(parsed_output, dict):
-            return {}
+        if not isinstance(parsed_output, (dict, list)):
+            return None
 
         return parsed_output
