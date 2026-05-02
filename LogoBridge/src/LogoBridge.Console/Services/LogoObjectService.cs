@@ -399,12 +399,12 @@ public sealed class LogoObjectService
 
             if (payload.TransactionCurrencyId > 0)
             {
+                try { dataObject.DataFields.FieldByName("CURRSEL_TOTALS").Value = 2; } catch { }
+                try { dataObject.DataFields.FieldByName("CURRSEL_DETAILS").Value = 2; } catch { }
                 try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = payload.TransactionCurrencyId; } catch { }
                 try { dataObject.DataFields.FieldByName("TRCURR").Value = payload.TransactionCurrencyId; } catch { }
                 try { dataObject.DataFields.FieldByName("TC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
                 try { dataObject.DataFields.FieldByName("TC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
-                try { dataObject.DataFields.FieldByName("CURRSEL_TOTALS").Value = 2; } catch { }
-                try { dataObject.DataFields.FieldByName("CURRSEL_DETAILS").Value = 2; } catch { }
             }
 
             errorMessage = string.Empty;
