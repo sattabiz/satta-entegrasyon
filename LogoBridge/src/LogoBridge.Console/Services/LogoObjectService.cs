@@ -397,6 +397,16 @@ public sealed class LogoObjectService
             dataObject.DataFields.FieldByName("DIVISION").Value = payload.Division;
             dataObject.DataFields.FieldByName("DEPARTMENT").Value = payload.Department;
 
+            if (payload.TransactionCurrencyId > 0)
+            {
+                try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = payload.TransactionCurrencyId; } catch { }
+                try { dataObject.DataFields.FieldByName("TRCURR").Value = payload.TransactionCurrencyId; } catch { }
+                try { dataObject.DataFields.FieldByName("TC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
+                try { dataObject.DataFields.FieldByName("TC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
+                try { dataObject.DataFields.FieldByName("CURRSEL_TOTALS").Value = 2; } catch { }
+                try { dataObject.DataFields.FieldByName("CURRSEL_DETAILS").Value = 2; } catch { }
+            }
+
             errorMessage = string.Empty;
             return true;
         }
@@ -423,7 +433,28 @@ public sealed class LogoObjectService
                 currentLine.FieldByName("TYPE").Value = (short)(line.LineType >= 0 ? line.LineType : 0);
                 currentLine.FieldByName("MASTER_CODE").Value = line.MasterCode ?? string.Empty;
                 currentLine.FieldByName("QUANTITY").Value = (double)(line.Quantity > 0 ? line.Quantity : 1.0m);
+
+                if (line.CurrencyId > 0)
+                {
+                    try { currentLine.FieldByName("CURR_TRANSACTIN").Value = line.CurrencyId; } catch { }
+                    try { currentLine.FieldByName("TRCURR").Value = line.CurrencyId; } catch { }
+                    try { currentLine.FieldByName("PRCURR").Value = line.CurrencyId; } catch { }
+                    try { currentLine.FieldByName("PCURR").Value = line.CurrencyId; } catch { }
+                    try { currentLine.FieldByName("CURRENCY").Value = line.CurrencyId; } catch { }
+                    try { currentLine.FieldByName("CURR_TYPE").Value = line.CurrencyId; } catch { }
+                    try { currentLine.FieldByName("PR_RATE").Value = (double)line.CurrencyRate; } catch { }
+                    try { currentLine.FieldByName("TRRATE").Value = (double)line.CurrencyRate; } catch { }
+                }
+
                 currentLine.FieldByName("PRICE").Value = (double)line.UnitPrice;
+
+                if (line.CurrencyId > 0)
+                {
+                    try { currentLine.FieldByName("FC_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
+                    try { currentLine.FieldByName("ED_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
+                    try { currentLine.FieldByName("PR_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
+                }
+
                 currentLine.FieldByName("VAT_RATE").Value = (double)(line.VatRate >= 0 ? line.VatRate : 0m);
                 currentLine.FieldByName("UNIT_CODE").Value = string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode;
                 currentLine.FieldByName("UNIT_CONV1").Value = (double)1.0;

@@ -37,6 +37,15 @@ public sealed class InvoiceLinePayload
     [JsonPropertyName("exchange_rate")]
     public decimal ExchangeRate { get; set; }
 
+    [JsonPropertyName("currency_id")]
+    public int CurrencyId { get; set; }
+
+    [JsonPropertyName("currency_rate")]
+    public decimal CurrencyRate { get; set; }
+
+    [JsonPropertyName("foreign_currency_price")]
+    public decimal ForeignCurrencyPrice { get; set; }
+
     [JsonPropertyName("warehouse_nr")]
     public int WarehouseNr { get; set; }
 

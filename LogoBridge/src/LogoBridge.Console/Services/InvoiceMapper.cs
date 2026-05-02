@@ -17,7 +17,7 @@ public sealed class InvoiceMapper
 
         payload.Validate();
 
-        return new Dictionary<string, string>
+        var dict = new Dictionary<string, string>
         {
             ["ARP_CODE"] = payload.ArpCode,
             ["FICHENO"] = payload.InvoiceNumber,
@@ -32,6 +32,15 @@ public sealed class InvoiceMapper
             ["DEPARTMENT"] = payload.Department.ToString(CultureInfo.InvariantCulture),
             ["DESCRIPTION"] = payload.Description,
         };
+
+        if (payload.TransactionCurrencyId > 0)
+        {
+            dict["CURRSEL_TOTALS"] = "1";
+            dict["TRCURR"] = payload.TransactionCurrencyId.ToString(CultureInfo.InvariantCulture);
+            dict["TC_XRATE"] = payload.TransactionCurrencyRate.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return dict;
     }
 
     public List<Dictionary<string, string>> MapTransactionLines(InvoicePayload payload)
@@ -62,7 +71,7 @@ public sealed class InvoiceMapper
 
         line.Validate(1);
 
-        return new Dictionary<string, string>
+        var dict = new Dictionary<string, string>
         {
             ["MASTER_CODE"] = line.MasterCode,
             ["QUANTITY"] = line.Quantity.ToString(CultureInfo.InvariantCulture),
@@ -74,6 +83,15 @@ public sealed class InvoiceMapper
             ["TOTAL"] = line.Total.ToString(CultureInfo.InvariantCulture),
             ["DESCRIPTION"] = line.Description,
         };
+
+        if (line.CurrencyId > 0)
+        {
+            dict["PRCURR"] = line.CurrencyId.ToString(CultureInfo.InvariantCulture);
+            dict["PR_RATE"] = line.CurrencyRate.ToString(CultureInfo.InvariantCulture);
+            dict["FC_PRICE"] = line.ForeignCurrencyPrice.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return dict;
     }
 
     private string ReadOptionalPayloadString(InvoicePayload payload, string propertyName, string defaultValue)

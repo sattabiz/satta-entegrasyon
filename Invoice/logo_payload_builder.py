@@ -56,6 +56,8 @@ class LogoPayloadBuilder:
             "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=0),
             "currency_code": self._resolve_invoice_currency(invoice),
             "exchange_rate": self._resolve_exchange_rate(invoice),
+            "transaction_currency_id": self._resolve_currency_id(self._resolve_invoice_currency(invoice)),
+            "transaction_currency_rate": self._resolve_exchange_rate(invoice),
             "notes": self._build_notes(invoice_id, payment_date, invoice_note),
             "lines": self._build_invoice_lines(invoice),
         }
@@ -78,11 +80,22 @@ class LogoPayloadBuilder:
             if quantity <= 0:
                 raise ValueError(f"{index}. satır için shipped_amount 0'dan büyük olmalıdır.")
 
-            unit_price = self._to_float(product.get("price"))
+            raw_price = self._to_float(product.get("price"))
+            tl_price = self._to_float(product.get("price_in_tl"))
+            
+            line_currency_code = self._safe_text(product.get("currency_code"), default="TRY")
+            currency_id = self._resolve_currency_id(line_currency_code)
+            currency_rate = self._resolve_line_exchange_rate(invoice, line_currency_code)
+
+            if tl_price > 0 and currency_id != 0:
+                unit_price = tl_price
+                foreign_price = raw_price
+            else:
+                unit_price = raw_price
+                foreign_price = 0.0
+
             vat_rate = self._to_float(product.get("applied_vat_rate"))
             total = self._to_float(product.get("line_total_without_tax"))
-
-            line_currency_code = self._safe_text(product.get("currency_code"), default="TRY")
 
             line_payload = {
                 "master_code": product_code,
@@ -91,10 +104,13 @@ class LogoPayloadBuilder:
                 "quantity": quantity,
                 "unit_code": self._safe_text(product.get("unit"), default="ADET"),
                 "unit_price": unit_price,
+                "foreign_currency_price": foreign_price,
                 "vat_rate": vat_rate,
                 "total": total,
                 "currency_code": line_currency_code,
-                "exchange_rate": self._resolve_line_exchange_rate(invoice, line_currency_code),
+                "exchange_rate": currency_rate,
+                "currency_id": currency_id,
+                "currency_rate": currency_rate,
                 "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=0),
                 "source_index": self._to_int(self.logo_settings.get("source_index"), default=0),
                 "division": self._to_int(self.logo_settings.get("division"), default=0),
@@ -136,9 +152,24 @@ class LogoPayloadBuilder:
             if not isinstance(product, dict):
                 continue
             currency_code = self._safe_text(product.get("currency_code"))
-            if currency_code:
+            if currency_code and currency_code.upper() != "TRY":
                 return currency_code
         return "TRY"
+
+    def _resolve_currency_id(self, currency_code: str) -> int:
+        code = self._safe_text(currency_code).upper()
+        mapping = {
+            "TRY": 0,
+            "TL": 0,
+            "USD": 1,
+            "EUR": 20,
+            "GBP": 17,
+            "CHF": 11,
+            "CAD": 19,
+            "RUB": 58,
+            "JPY": 18
+        }
+        return mapping.get(code, 0)
 
     def _resolve_exchange_rate(self, invoice: Dict[str, Any]) -> float:
         currency_code = self._resolve_invoice_currency(invoice)
