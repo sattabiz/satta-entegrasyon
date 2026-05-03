@@ -387,6 +387,7 @@ public sealed class LogoObjectService
             
             dataObject.DataFields.FieldByName("TIME").Value = ResolveLogoPackedTime(payload.DocumentTime);
             dataObject.DataFields.FieldByName("ARP_CODE").Value = payload.ArpCode ?? string.Empty;
+            try { dataObject.FillDefaults(); } catch { }
             
             var paymentCode = ReadOptionalPayloadString(payload, "PaymentCode", string.Empty);
             if (!string.IsNullOrWhiteSpace(paymentCode))
@@ -405,6 +406,7 @@ public sealed class LogoObjectService
                 try { dataObject.DataFields.FieldByName("TRCURR").Value = payload.TransactionCurrencyId; } catch { }
                 try { dataObject.DataFields.FieldByName("TC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
                 try { dataObject.DataFields.FieldByName("TC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
+                try { dataObject.DataFields.FieldByName("TRRATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
             }
 
             errorMessage = string.Empty;
@@ -432,10 +434,13 @@ public sealed class LogoObjectService
 
                 currentLine.FieldByName("TYPE").Value = (short)(line.LineType >= 0 ? line.LineType : 0);
                 currentLine.FieldByName("MASTER_CODE").Value = line.MasterCode ?? string.Empty;
+                try { currentLine.FillDefaults(); } catch { }
                 currentLine.FieldByName("QUANTITY").Value = (double)(line.Quantity > 0 ? line.Quantity : 1.0m);
 
                 if (line.CurrencyId > 0)
                 {
+                    try { currentLine.FieldByName("LINECURRSEL").Value = 2; } catch { }
+                    try { currentLine.FieldByName("PRCURRSEL").Value = 2; } catch { }
                     try { currentLine.FieldByName("CURR_TRANSACTIN").Value = line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("TRCURR").Value = line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("PRCURR").Value = line.CurrencyId; } catch { }

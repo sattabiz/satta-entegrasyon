@@ -82,16 +82,17 @@ class LogoPayloadBuilder:
 
             raw_price = self._to_float(product.get("price"))
             tl_price = self._to_float(product.get("price_in_tl"))
-            
-            line_currency_code = self._safe_text(product.get("currency_code"), default="TRY")
+
+            # Cari'den tespit edilen ana fatura dövizini kullanıyoruz (Satırın kendi döviz kodunu eziyoruz)
+            line_currency_code = self._resolve_invoice_currency(invoice)
             currency_id = self._resolve_currency_id(line_currency_code)
             currency_rate = self._resolve_line_exchange_rate(invoice, line_currency_code)
 
-            if tl_price > 0 and currency_id != 0:
-                unit_price = tl_price
+            if currency_id != 0:
+                unit_price = tl_price if tl_price > 0 else raw_price
                 foreign_price = raw_price
             else:
-                unit_price = raw_price
+                unit_price = tl_price if tl_price > 0 else raw_price
                 foreign_price = 0.0
 
             vat_rate = self._to_float(product.get("applied_vat_rate"))
@@ -147,6 +148,14 @@ class LogoPayloadBuilder:
         return ""
 
     def _resolve_invoice_currency(self, invoice: Dict[str, Any]) -> str:
+        seller_erp_id = self._safe_text(invoice.get("seller_erp_id")).upper()
+        if seller_erp_id.endswith(".€"):
+            return "EUR"
+        if seller_erp_id.endswith(".$"):
+            return "USD"
+        if seller_erp_id.endswith(".£"):
+            return "GBP"
+
         products = invoice.get("products") or []
         for product in products:
             if not isinstance(product, dict):
