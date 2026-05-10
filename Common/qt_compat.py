@@ -8,7 +8,7 @@ if sys.version_info.major == 3 and sys.version_info.minor <= 9:
         QAbstractItemView, QCheckBox, QFileDialog, QHeaderView, QHBoxLayout,
         QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
         QProgressDialog, QFormLayout, QComboBox, QGroupBox, QGridLayout,
-        QFrame, QSpinBox
+        QFrame, QSpinBox, QStyledItemDelegate
     )
 else:
     from PySide6.QtCore import Qt, QThread, Signal, QEventLoop
@@ -18,5 +18,5 @@ else:
         QAbstractItemView, QCheckBox, QFileDialog, QHeaderView, QHBoxLayout,
         QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
         QProgressDialog, QFormLayout, QComboBox, QGroupBox, QGridLayout,
-        QFrame, QSpinBox
+        QFrame, QSpinBox, QStyledItemDelegate
     )

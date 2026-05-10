@@ -20,7 +20,7 @@ from Stock.get_categories import SattaCategoryConnector
 from Stock.get_cost_center import SattaCostCenterConnector
 from Stock.push_products import SattaProductPushConnector
 from Stock.products_reader import ProductReader, ProductReaderConfig
-
+from Common.checkable_combo import CheckableComboBox
 
 SETTINGS_FILE = user_data_path("app_settings.json")
 
@@ -39,7 +39,7 @@ class StockTab(QWidget):
 
         top_form_layout = QVBoxLayout()
 
-        self.source_combo = QComboBox()
+        self.source_combo = CheckableComboBox()
         self.source_combo.addItem("Masraf merkezi yüklenmedi")
 
         self.target_combo = QComboBox()
@@ -400,7 +400,9 @@ class StockTab(QWidget):
         selected_products = []
         invalid_products = []
 
-        selected_cost_center_erp_id = str(self.source_combo.currentData() or "").strip()
+        checked_cost_centers = self.source_combo.checkedItems()
+        selected_cost_center_erp_ids = [str(item["data"]).strip() for item in checked_cost_centers if item["data"]]
+
         selected_category = self.target_combo.currentText().strip()
 
         invalid_category_values = {"", "Kategori yüklenmedi", "Kategori bulunamadı"}
@@ -431,9 +433,7 @@ class StockTab(QWidget):
             row_category = category_item.text().strip() if category_item else ""
             category_text = selected_category if selected_category not in invalid_category_values else row_category
 
-            cost_center_ids = []
-            if selected_cost_center_erp_id:
-                cost_center_ids = [selected_cost_center_erp_id]
+            cost_center_ids = selected_cost_center_erp_ids.copy()
 
             product_data = {
                 "product_name": product_name,
