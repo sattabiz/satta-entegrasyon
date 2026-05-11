@@ -459,8 +459,9 @@ public sealed class LogoObjectService
                 currentLine.FieldByName("MASTER_CODE").Value = line.MasterCode ?? string.Empty;
                 try { currentLine.FillDefaults(); } catch { }
                 currentLine.FieldByName("QUANTITY").Value = (double)(line.Quantity > 0 ? line.Quantity : 1.0m);
-
                 currentLine.FieldByName("PRICE").Value = (double)line.UnitPrice;
+                currentLine.FieldByName("TOTAL").Value = (double)line.Total;
+                
                 currentLine.FieldByName("VAT_RATE").Value = (double)(line.VatRate >= 0 ? line.VatRate : 0m);
                 currentLine.FieldByName("UNIT_CODE").Value = string.IsNullOrWhiteSpace(line.UnitCode) ? "ADET" : line.UnitCode;
                 currentLine.FieldByName("UNIT_CONV1").Value = (double)1.0;
