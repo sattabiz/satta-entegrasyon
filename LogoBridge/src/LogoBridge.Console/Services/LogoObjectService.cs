@@ -402,17 +402,17 @@ public sealed class LogoObjectService
             {
                 var currErrors = new System.Collections.Generic.List<string>();
                 
+                try { dataObject.DataFields.FieldByName("CURRSEL_TOTALS").Value = (short)2; } catch (Exception e) { currErrors.Add("CURRSEL_TOTALS: " + e.Message); }
+                try { dataObject.DataFields.FieldByName("CURRSEL_DETAILS").Value = (short)2; } catch (Exception e) { currErrors.Add("CURRSEL_DETAILS: " + e.Message); }
+
                 try { dataObject.DataFields.FieldByName("TRCURR").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("TRCURR_short: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TRCURR").Value = (int)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("TRCURR_int: " + e.Message); }
 
                 try { dataObject.DataFields.FieldByName("CURR_PRICE").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_PRICE: " + e.Message); }
-                try { dataObject.DataFields.FieldByName("EDT_CURR").Value = (short)1; } catch (Exception e) { currErrors.Add("EDT_CURR: " + e.Message); }
+                try { dataObject.DataFields.FieldByName("EDT_CURR").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("EDT_CURR: " + e.Message); }
 
                 try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_TRANSACTIN_short: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = (int)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_TRANSACTIN_int: " + e.Message); }
-
-                try { dataObject.DataFields.FieldByName("CURRSEL_TOTALS").Value = (short)2; } catch (Exception e) { currErrors.Add("CURRSEL_TOTALS: " + e.Message); }
-                try { dataObject.DataFields.FieldByName("CURRSEL_DETAILS").Value = (short)2; } catch (Exception e) { currErrors.Add("CURRSEL_DETAILS: " + e.Message); }
                 
                 try { dataObject.DataFields.FieldByName("TC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TC_XRATE: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TC_RATE: " + e.Message); }
@@ -425,11 +425,18 @@ public sealed class LogoObjectService
                 {
                     try
                     {
-                        string logPath = @"d:\Burak_Files\SattaEntegration\currency_log.txt";
+                        string logPath = @"C:\Program Files (x86)\Satta\currency_log.txt";
                         System.IO.File.AppendAllText(logPath, "\n--- " + System.DateTime.Now.ToString() + " ---\n" + string.Join("\n", currErrors) + "\n");
                     }
                     catch { }
                 }
+            }
+            else
+            {
+                try { dataObject.DataFields.FieldByName("CURRSEL_TOTALS").Value = (short)0; } catch { }
+                try { dataObject.DataFields.FieldByName("CURRSEL_DETAILS").Value = (short)0; } catch { }
+                try { dataObject.DataFields.FieldByName("TRCURR").Value = (short)0; } catch { }
+                try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = (short)0; } catch { }
             }
 
             errorMessage = string.Empty;
@@ -470,7 +477,7 @@ public sealed class LogoObjectService
                 if (line.CurrencyId > 0)
                 {
                     try { currentLine.FieldByName("CURR_PRICE").Value = (short)line.CurrencyId; } catch { }
-                    try { currentLine.FieldByName("EDT_CURR").Value = (short)1; } catch { }
+                    try { currentLine.FieldByName("EDT_CURR").Value = (short)line.CurrencyId; } catch { }
 
                     try { currentLine.FieldByName("LINECURRSEL").Value = (short)2; } catch { }
                     try { currentLine.FieldByName("PRCURRSEL").Value = (short)2; } catch { }
@@ -482,10 +489,20 @@ public sealed class LogoObjectService
                     try { currentLine.FieldByName("CURR_TYPE").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("PR_RATE").Value = (double)line.CurrencyRate; } catch { }
                     try { currentLine.FieldByName("TRRATE").Value = (double)line.CurrencyRate; } catch { }
+                    
                     try { currentLine.FieldByName("FC_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
                     try { currentLine.FieldByName("ED_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
+                    try { currentLine.FieldByName("EDT_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
                     try { currentLine.FieldByName("PR_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
                     try { currentLine.FieldByName("PC_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
+                }
+                else
+                {
+                    try { currentLine.FieldByName("LINECURRSEL").Value = (short)0; } catch { }
+                    try { currentLine.FieldByName("PRCURRSEL").Value = (short)0; } catch { }
+                    try { currentLine.FieldByName("CURR_PRICE").Value = (short)0; } catch { }
+                    try { currentLine.FieldByName("EDT_CURR").Value = (short)0; } catch { }
+                    try { currentLine.FieldByName("TRCURR").Value = (short)0; } catch { }
                 }
                 
                 if (line.WarehouseNr > 0)
