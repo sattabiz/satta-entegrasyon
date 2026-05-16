@@ -9,7 +9,7 @@
     <LangVersion>latest</LangVersion>
     <Platforms>x86</Platforms>
     <PlatformTarget>x86</PlatformTarget>
-    <Prefer32Bit>true</Prefer32Bit>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
   </PropertyGroup>
 
   <!--
