@@ -141,10 +141,6 @@ class LogoPayloadBuilder:
         if product_code and not product_code.startswith("SAT-"):
             return product_code
 
-        product_code = self._safe_text(product.get("company_product_erp_id"))
-        if product_code and not product_code.startswith("SAT-"):
-            return product_code
-
         return ""
 
     def _resolve_invoice_currency(self, invoice: Dict[str, Any]) -> str:

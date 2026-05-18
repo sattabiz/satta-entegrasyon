@@ -150,6 +150,17 @@ public sealed class LogoObjectService
             result.Details["exception_type"] = exception.GetType().Name;
             return result;
         }
+        finally
+        {
+            if (dataObject != null)
+            {
+                try
+                {
+                    System.Runtime.InteropServices.Marshal.ReleaseComObject(dataObject);
+                }
+                catch { }
+            }
+        }
     }
 
     public BridgeResult TransferPurchaseInvoice(InvoicePayload payload)
@@ -1253,6 +1264,12 @@ public sealed class LogoObjectService
         TryInvokeMethod(unityApplication, "CompanyLogout", Array.Empty<object>());
         TryInvokeMethod(unityApplication, "UserLogout", Array.Empty<object>());
         TryInvokeMethod(unityApplication, "Disconnect", Array.Empty<object>());
+
+        try
+        {
+            System.Runtime.InteropServices.Marshal.ReleaseComObject(unityApplication);
+        }
+        catch { }
     }
 
     private void AppendPayloadSummary(BridgeResult result, InvoicePayload payload)
