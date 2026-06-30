@@ -16,6 +16,8 @@ from Common.qt_compat import (
     QWidget,
 )
 
+from Stock.get_categories import SattaCategoryConnector
+from Stock.get_cost_center import SattaCostCenterConnector
 from Service.services_reader import ServiceReader, ServiceReaderConfig
 from Common.checkable_combo import CheckableComboBox
 
@@ -80,10 +82,6 @@ class ServiceTab(QWidget):
         self.load_services_button = QPushButton("Hizmetleri Al")
         self.transfer_button = QPushButton("Seçili Hizmetleri Satta'ya Gönder")
         self.select_all_button = QPushButton("Tümünü Seç / Temizle")
-        
-        # Disable cost center/category load for now as it uses Stock connector, or mock it
-        self.load_button.setEnabled(False) 
-        self.load_button.setToolTip("Şu an hizmetler için aktif değil.")
 
         title_row.addWidget(self.load_button)
         title_row.addWidget(self.load_services_button)
@@ -120,6 +118,7 @@ class ServiceTab(QWidget):
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         
+        self.load_button.clicked.connect(self.load_cost_centers_and_categories)
         self.load_services_button.clicked.connect(self.load_services)
         self.transfer_button.clicked.connect(self.transfer_selected_services)
         self.select_all_button.clicked.connect(self.toggle_select_all)
@@ -196,6 +195,49 @@ class ServiceTab(QWidget):
 
     def run_search_with_feedback(self):
         self.filter_services(show_no_results_message=True)
+
+    def load_cost_centers_and_categories(self):
+        cost_center_connector = SattaCostCenterConnector()
+        category_connector = SattaCategoryConnector()
+
+        try:
+            cost_centers = cost_center_connector.get_cost_centers()
+            categories = category_connector.get_categories()
+        except Exception as exc:
+            QMessageBox.critical(self, "Satta Hatası", f"Masraf merkezi ve kategoriler alınamadı:\n{exc}")
+            return
+
+        self.populate_dropdowns(cost_centers, categories)
+
+    def populate_dropdowns(self, cost_centers, categories):
+        self.source_combo.blockSignals(True)
+        self.target_combo.blockSignals(True)
+
+        self.source_combo.clear()
+        self.target_combo.clear()
+
+        if cost_centers:
+            for cost_center in cost_centers:
+                if not isinstance(cost_center, dict):
+                    continue
+                name = str(cost_center.get("name", "")).strip()
+                erp_id = str(cost_center.get("erp_id", "")).strip()
+                if not name:
+                    continue
+                self.source_combo.addItem(name, erp_id)
+
+            if self.source_combo.count() == 0:
+                self.source_combo.addItem("Masraf merkezi bulunamadı", "")
+        else:
+            self.source_combo.addItem("Masraf merkezi bulunamadı", "")
+
+        if categories:
+            self.target_combo.addItems(categories)
+        else:
+            self.target_combo.addItem("Kategori bulunamadı")
+
+        self.source_combo.blockSignals(False)
+        self.target_combo.blockSignals(False)
 
     def configure_table_columns(self):
         default_width = 120
