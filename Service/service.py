@@ -18,6 +18,7 @@ from Common.qt_compat import (
 
 from Stock.get_categories import SattaCategoryConnector
 from Stock.get_cost_center import SattaCostCenterConnector
+from Stock.push_products import SattaProductPushConnector
 from Service.services_reader import ServiceReader, ServiceReaderConfig
 from Common.checkable_combo import CheckableComboBox
 
@@ -324,36 +325,103 @@ class ServiceTab(QWidget):
         elif search_text and show_no_results_message:
             QMessageBox.information(self, "Arama Sonucu", "Aramaya uygun hizmet bulunamadı.")
 
+    def parse_tax_rate(self, value):
+        text = str(value).strip().replace("%", "").replace(",", ".")
+        try:
+            return int(float(text))
+        except (TypeError, ValueError):
+            return 0
+
+    def parse_number(self, value):
+        text = str(value).strip().replace(",", ".")
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return 0
+
     def get_selected_services(self):
         selected_services = []
+        invalid_services = []
+
+        checked_cost_centers = self.source_combo.checkedItems()
+        selected_cost_center_erp_ids = [str(item["data"]).strip() for item in checked_cost_centers if item["data"]]
+
+        selected_category = self.target_combo.currentText().strip()
+        invalid_category_values = {"", "Kategori yüklenmedi", "Kategori bulunamadı"}
+
         code_idx = self.get_col_idx("Hizmet Kodu")
         name_idx = self.get_col_idx("Hizmet Açıklaması")
         if name_idx == -1: name_idx = self.get_col_idx("Hizmet Adı")
+        unit_idx = self.get_col_idx("Birim")
+        tax_idx = self.get_col_idx("KDV Oranı")
         
         for row in range(self.service_table.rowCount()):
             check_item = self.service_table.item(row, 0)
             if check_item is None or check_item.checkState() != Qt.Checked:
                 continue
 
-            code = self.service_table.item(row, code_idx).text().strip() if code_idx > 0 and self.service_table.item(row, code_idx) else ""
-            name = self.service_table.item(row, name_idx).text().strip() if name_idx > 0 and self.service_table.item(row, name_idx) else ""
+            service_code = self.service_table.item(row, code_idx).text().strip() if code_idx > 0 and self.service_table.item(row, code_idx) else ""
+            service_name = self.service_table.item(row, name_idx).text().strip() if name_idx > 0 and self.service_table.item(row, name_idx) else "-"
+            unit_text = self.service_table.item(row, unit_idx).text().strip() if unit_idx > 0 and self.service_table.item(row, unit_idx) else ""
+            tax_text = self.service_table.item(row, tax_idx).text() if tax_idx > 0 and self.service_table.item(row, tax_idx) else "0"
             
-            selected_services.append((code, name))
+            if not unit_text:
+                service_label = service_code or service_name
+                invalid_services.append(f"{service_label} -> Eksik alan: Birim")
+                continue
 
-        return selected_services
+            category_text = selected_category if selected_category not in invalid_category_values else ""
+            cost_center_ids = selected_cost_center_erp_ids.copy()
+
+            service_data = {
+                "product_name": service_name,
+                "description": "",
+                "category_text": category_text,
+                "erp_id": service_code,
+                "unit": unit_text,
+                "tax_rate": self.parse_tax_rate(tax_text),
+                "price": 0.0,
+                "currency": "TRY",
+                "max_quantity": None,
+                "min_quantity": None,
+                "quantity_tolerance": None,
+                "notes": "",
+                "cost_center_erp_ids": cost_center_ids,
+                "un_no": "",
+                "erp_code": service_code,
+            }
+            selected_services.append(service_data)
+
+        return selected_services, invalid_services
 
     def transfer_selected_services(self):
-        selected_services = self.get_selected_services()
+        selected_services, invalid_services = self.get_selected_services()
+
+        if invalid_services:
+            missing_text = "\n".join(invalid_services)
+            QMessageBox.warning(
+                self,
+                "Eksik Zorunlu Alan",
+                f"Aşağıdaki hizmetler aktarılmadı çünkü Birim bilgileri Logo'da eksik (veya tabloda boş):\n\n{missing_text}\n\nLütfen Logo ERP veya tablo üzerinden boş olan birimleri düzeltip tekrar deneyin.",
+            )
+            return
 
         if not selected_services:
-            QMessageBox.warning(self, "Seçim Yok", "Önce işlem yapılacak hizmetleri seçin.")
+            QMessageBox.warning(self, "Seçim Yok", "Önce aktarılacak (ve birimi girilmiş) hizmetleri seçin.")
+            return
+
+        connector = SattaProductPushConnector()
+
+        try:
+            connector.push_products(selected_services)
+        except Exception as exc:
+            QMessageBox.critical(self, "Aktarım Hatası", f"Seçili hizmetler Satta'ya gönderilemedi:\n{exc}")
             return
 
         QMessageBox.information(
             self,
-            "Satta'ya Gönder",
-            f"Seçili {len(selected_services)} hizmet için Satta'ya gönderim simüle edildi.\n\n"
-            "Not: Satta'ya gönderim henüz aktif değildir. Arka plan işlemleri boştadır."
+            "Aktarım Tamamlandı",
+            f"Seçili {len(selected_services)} hizmet Satta'ya başarıyla gönderildi."
         )
 
     def update_selected_count(self):

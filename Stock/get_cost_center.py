@@ -62,6 +62,9 @@ class SattaCostCenterConnector:
                 continue
 
             erp_id = self._safe_text(item.get("erp_id"))
+            if not erp_id:
+                erp_id = self._safe_text(item.get("id"))
+                
             values.append({"name": name, "erp_id": erp_id})
 
         return self._unique_cost_centers(values)
