@@ -84,31 +84,16 @@ class StockTab(QWidget):
         self.load_button = QPushButton("Masraf Merkezi ve Kategorileri Al")
         self.load_products_button = QPushButton("Ürünleri Al")
         self.transfer_button = QPushButton("Seçili Ürünleri Satta'ya Gönder")
-        self.edit_selected_button = QPushButton("Seçili Satırları Düzenle")
+        self.select_all_button = QPushButton("Tümünü Seç / Temizle")
         title_row.addWidget(self.load_button)
         title_row.addWidget(self.load_products_button)
         title_row.addWidget(self.transfer_button)
-        title_row.addWidget(self.edit_selected_button)
+        title_row.addWidget(self.select_all_button)
         root_layout.addLayout(title_row)
         root_layout.addLayout(search_row)
 
-        self.stock_table = QTableWidget(0, 14)
-        self.stock_table.setHorizontalHeaderLabels([
-            "Seç",
-            "Ürün Kodu",
-            "Ürün Adı",
-            "Kategori",
-            "Birim",
-            "Stok Miktarı",
-            "Stok Adedi",
-            "KDV Oranı",
-            "Birim Fiyat",
-            "Döviz",
-            "Son Alış Fiyatı",
-            "Son Alış Fiyatı Döviz Cinsi",
-            "Açıklama",
-            "Durum",
-        ])
+        self.stock_table = QTableWidget(0, 1)
+        self.stock_table.setHorizontalHeaderLabels(["Seç"])
         self.stock_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.stock_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.stock_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -117,33 +102,36 @@ class StockTab(QWidget):
         self.stock_table.horizontalHeader().setStretchLastSection(False)
         self.stock_table.setWordWrap(True)
         self.stock_table.setTextElideMode(Qt.ElideRight)
-        self.configure_table_columns()
+        
+        self.current_headers = []
+
         root_layout.addWidget(self.stock_table)
 
         status_info_layout = QHBoxLayout()
         self.selected_info_label = QLabel("Seçili ürün sayısı: 0")
-        self.ready_info_label = QLabel("Hazır durumundaki ürün sayısı: 0")
-        self.waiting_info_label = QLabel("Bekliyor durumundaki ürün sayısı: 0")
-        self.error_info_label = QLabel("Hata durumundaki ürün sayısı: 0")
+        self.ready_info_label = QLabel("Kullanımda durumundaki ürün sayısı: 0")
+        self.error_info_label = QLabel("Diğer durumdaki ürün sayısı: 0")
         status_info_layout.addWidget(self.selected_info_label)
         status_info_layout.addWidget(self.ready_info_label)
-        status_info_layout.addWidget(self.waiting_info_label)
         status_info_layout.addWidget(self.error_info_label)
         root_layout.addLayout(status_info_layout)
 
         self.all_products = []
-        self.editable_product_codes = set()
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.load_button.clicked.connect(self.load_cost_centers_and_categories)
         self.load_products_button.clicked.connect(self.load_products)
         self.transfer_button.clicked.connect(self.transfer_selected_products)
-        self.edit_selected_button.clicked.connect(self.enable_selected_rows_editing)
-        self.stock_table.itemSelectionChanged.connect(self.update_edit_button_text)
+        self.select_all_button.clicked.connect(self.toggle_select_all)
         self.stock_table.itemChanged.connect(self.handle_table_item_changed)
-        self.update_edit_button_text()
         
-        # self.load_sample_data() # UI ilk açıldığında gösterilen mock (A4 kağıt vb) kapatıldı.
+    def get_col_idx(self, name):
+        if not self.current_headers:
+            return -1
+        try:
+            return self.current_headers.index(name) + 1
+        except ValueError:
+            return -1
 
     def load_products(self):
         try:
@@ -171,26 +159,28 @@ class StockTab(QWidget):
                 use_mock_data=False,
             )
             reader = ProductReader(config)
-            products = reader.read_products()
+            headers, products = reader.read_products()
         except Exception as exc:
             QMessageBox.critical(self, "Logo Hatası", f"Ürünler alınamadı:\n{exc}")
             return
 
-        self.apply_product_data(products)
+        self.apply_product_data(headers, products)
 
-    def apply_product_data(self, rows):
+    def apply_product_data(self, headers, rows):
+        self.current_headers = headers
         self.all_products = [tuple(str(value) if value is not None else "" for value in row) for row in rows]
 
         try:
             self.stock_table.itemChanged.disconnect(self.handle_table_item_changed)
-        except RuntimeError:
-            pass
-        except TypeError:
+        except (RuntimeError, TypeError):
             pass
 
         self.stock_table.setUpdatesEnabled(False)
         self.stock_table.blockSignals(True)
         try:
+            self.stock_table.setColumnCount(len(headers) + 1)
+            self.stock_table.setHorizontalHeaderLabels(["Seç"] + headers)
+            self.configure_table_columns()
             self.populate_stock_table(self.all_products)
         finally:
             self.stock_table.blockSignals(False)
@@ -249,17 +239,8 @@ class StockTab(QWidget):
         self.source_combo.blockSignals(False)
         self.target_combo.blockSignals(False)
 
-    def load_sample_data(self):
-        self.apply_product_data([
-            ("STK001", "A4 Kağıt 80gr", "Kırtasiye", "PKT", "250", "250", "%20", "125.00", "TRY", "118.50", "TRY", "Beyaz fotokopi kağıdı", "Hazır"),
-            ("STK002", "Mavi Tükenmez Kalem", "Kırtasiye", "ADET", "1200", "1200", "%20", "12.75", "TRY", "11.90", "TRY", "0.7 mm kalem", "Bekliyor"),
-            ("STK003", "Lazer Yazıcı Toneri", "Ofis Ekipmanı", "ADET", "45", "45", "%20", "3250.00", "USD", "3100.00", "USD", "Siyah toner kartuşu", "Hata"),
-            ("STK004", "Endüstriyel Temizleyici", "Temizlik", "ADET", "80", "80", "%10", "210.00", "TRY", "198.00", "TRY", "Yüzey temizleme ürünü", "Hazır"),
-            ("STK005", "Konveyör Rulmanı", "Yedek Parça", "ADET", "18", "18", "%20", "980.00", "EUR", "945.00", "EUR", "Hat bakım yedek parçası", "Bekliyor"),
-        ])
-
     def configure_table_columns(self):
-        default_width = 100
+        default_width = 120
         header = self.stock_table.horizontalHeader()
 
         for column_index in range(self.stock_table.columnCount()):
@@ -267,20 +248,16 @@ class StockTab(QWidget):
             self.stock_table.setColumnWidth(column_index, default_width)
 
         self.stock_table.setColumnWidth(0, 36)
-
-    def normalize_table_row(self, row_data):
-        normalized_row = [str(value) if value is not None else "" for value in row_data[:13]]
-        while len(normalized_row) < 13:
-            normalized_row.append("")
-        return tuple(normalized_row)
+        
+        name_idx = self.get_col_idx("Ürün Adı")
+        if name_idx > 0:
+            self.stock_table.setColumnWidth(name_idx, 250)
 
     def populate_stock_table(self, rows):
         self.stock_table.setRowCount(0)
-        for raw_row_data in rows:
-            row_data = self.normalize_table_row(raw_row_data)
-            product_code = row_data[0].strip()
-            is_row_editable = product_code in self.editable_product_codes
-
+        code_idx = self.get_col_idx("Ürün Kodu")
+        
+        for row_data in rows:
             row_index = self.stock_table.rowCount()
             self.stock_table.insertRow(row_index)
 
@@ -292,47 +269,26 @@ class StockTab(QWidget):
 
             for col_index, value in enumerate(row_data, start=1):
                 item = QTableWidgetItem(value)
-                if col_index == 1:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                elif is_row_editable:
-                    item.setFlags(item.flags() | Qt.ItemIsEditable)
-                else:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.stock_table.setItem(row_index, col_index, item)
 
-    def get_selected_row_indexes(self):
-        return sorted(index.row() for index in self.stock_table.selectionModel().selectedRows())
-
-    def update_edit_button_text(self):
-        selected_count = len(self.get_selected_row_indexes())
-        if selected_count == 1:
-            self.edit_selected_button.setText("Seçili Satırı Düzenle")
-        else:
-            self.edit_selected_button.setText("Seçili Satırları Düzenle")
-
-    def enable_selected_rows_editing(self):
-        selected_rows = self.get_selected_row_indexes()
-        if not selected_rows:
-            QMessageBox.warning(self, "Satır Seçilmedi", "Önce düzenlemek istediğin satırı veya satırları seç.")
-            return
-
-        self.stock_table.setEditTriggers(
-            QAbstractItemView.DoubleClicked
-            | QAbstractItemView.EditKeyPressed
-            | QAbstractItemView.SelectedClicked
-        )
-
-        for row in selected_rows:
-            code_item = self.stock_table.item(row, 1)
-            product_code = code_item.text().strip() if code_item else ""
-            if product_code:
-                self.editable_product_codes.add(product_code)
-
-            for col in range(2, self.stock_table.columnCount()):
-                item = self.stock_table.item(row, col)
-                if item is None:
-                    continue
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
+    def toggle_select_all(self):
+        all_checked = True
+        for row in range(self.stock_table.rowCount()):
+            item = self.stock_table.item(row, 0)
+            if item is not None and item.checkState() == Qt.Unchecked:
+                all_checked = False
+                break
+        
+        new_state = Qt.Unchecked if all_checked else Qt.Checked
+        
+        self.stock_table.blockSignals(True)
+        for row in range(self.stock_table.rowCount()):
+            item = self.stock_table.item(row, 0)
+            if item is not None:
+                item.setCheckState(new_state)
+        self.stock_table.blockSignals(False)
+        self.update_selected_count()
 
     def handle_table_item_changed(self, item):
         if item is None:
@@ -340,31 +296,6 @@ class StockTab(QWidget):
 
         if item.column() == 0:
             self.update_selected_count()
-            return
-
-        if item.column() == 1:
-            return
-
-        code_item = self.stock_table.item(item.row(), 1)
-        product_code = code_item.text().strip() if code_item else ""
-
-        if not product_code:
-            self.update_selected_count()
-            return
-
-        data_index = item.column() - 1
-
-        updated_rows = []
-        for row_data in self.all_products:
-            normalized_row = list(self.normalize_table_row(row_data))
-            if str(normalized_row[0]).strip() == product_code:
-                normalized_row[data_index] = item.text().strip()
-                updated_rows.append(tuple(normalized_row))
-            else:
-                updated_rows.append(tuple(normalized_row))
-
-        self.all_products = updated_rows
-        self.update_selected_count()
 
     def filter_products(self, *_args, show_no_results_message=False):
         search_text = self.search_input.text().strip().lower()
@@ -374,11 +305,7 @@ class StockTab(QWidget):
         else:
             filtered_rows = []
             for row in self.all_products:
-                product_code = str(row[0]).lower()
-                product_name = str(row[1]).lower()
-                category = str(row[2]).lower() if len(row) > 2 else ""
-
-                if search_text in product_code or search_text in product_name or search_text in category:
+                if any(search_text in str(cell).lower() for cell in row):
                     filtered_rows.append(row)
 
         self.stock_table.setUpdatesEnabled(False)
@@ -406,44 +333,48 @@ class StockTab(QWidget):
         selected_category = self.target_combo.currentText().strip()
 
         invalid_category_values = {"", "Kategori yüklenmedi", "Kategori bulunamadı"}
+        
+        code_idx = self.get_col_idx("Ürün Kodu")
+        name_idx = self.get_col_idx("Ürün Adı")
+        unit_idx = self.get_col_idx("Birim")
+        tax_idx = self.get_col_idx("KDV Oranı")
+        price_idx = self.get_col_idx("Birim Fiyat")
+        curr_idx = self.get_col_idx("Döviz")
+        desc_idx = self.get_col_idx("Açıklama")
+        cat_idx = self.get_col_idx("Kategori")
 
         for row in range(self.stock_table.rowCount()):
             check_item = self.stock_table.item(row, 0)
             if check_item is None or check_item.checkState() != Qt.Checked:
                 continue
 
-            product_code_item = self.stock_table.item(row, 1)
-            product_name_item = self.stock_table.item(row, 2)
-            category_item = self.stock_table.item(row, 3)
-            unit_item = self.stock_table.item(row, 4)
-            tax_rate_item = self.stock_table.item(row, 7)
-            price_item = self.stock_table.item(row, 8)
-            currency_item = self.stock_table.item(row, 9)
-            description_item = self.stock_table.item(row, 12)
-
-            product_code = product_code_item.text().strip() if product_code_item else ""
-            product_name = product_name_item.text().strip() if product_name_item else "-"
-            unit_text = unit_item.text().strip() if unit_item else ""
-
+            product_code = self.stock_table.item(row, code_idx).text().strip() if code_idx > 0 and self.stock_table.item(row, code_idx) else ""
+            product_name = self.stock_table.item(row, name_idx).text().strip() if name_idx > 0 and self.stock_table.item(row, name_idx) else "-"
+            unit_text = self.stock_table.item(row, unit_idx).text().strip() if unit_idx > 0 and self.stock_table.item(row, unit_idx) else ""
+            tax_text = self.stock_table.item(row, tax_idx).text() if tax_idx > 0 and self.stock_table.item(row, tax_idx) else "0"
+            price_text = self.stock_table.item(row, price_idx).text() if price_idx > 0 and self.stock_table.item(row, price_idx) else "0"
+            curr_text = self.stock_table.item(row, curr_idx).text().strip() if curr_idx > 0 and self.stock_table.item(row, curr_idx) else "TRY"
+            desc_text = self.stock_table.item(row, desc_idx).text().strip() if desc_idx > 0 and self.stock_table.item(row, desc_idx) else ""
+            
             if not unit_text:
                 product_label = product_code or product_name
                 invalid_products.append(f"{product_label} -> Eksik alan: Birim")
                 continue
 
-            row_category = category_item.text().strip() if category_item else ""
+            row_category = self.stock_table.item(row, cat_idx).text().strip() if cat_idx > 0 and self.stock_table.item(row, cat_idx) else ""
             category_text = selected_category if selected_category not in invalid_category_values else row_category
 
             cost_center_ids = selected_cost_center_erp_ids.copy()
 
             product_data = {
                 "product_name": product_name,
-                "description": description_item.text().strip() if description_item else "",
+                "description": desc_text,
                 "category_text": category_text,
                 "erp_id": product_code,
                 "unit": unit_text,
-                "tax_rate": self.parse_tax_rate(tax_rate_item.text() if tax_rate_item else "0"),
-                "price": self.parse_number(price_item.text() if price_item else "0"),
-                "currency": currency_item.text().strip() if currency_item else "TRY",
+                "tax_rate": self.parse_tax_rate(tax_text),
+                "price": self.parse_number(price_text),
+                "currency": curr_text,
                 "max_quantity": None,
                 "min_quantity": None,
                 "quantity_tolerance": None,
@@ -513,23 +444,23 @@ class StockTab(QWidget):
         self.update_selected_count()
 
         ready_count = 0
-        waiting_count = 0
         error_count = 0
+        
+        status_idx = self.get_col_idx("Kullanım Durumu")
+        if status_idx == -1:
+            status_idx = self.get_col_idx("Durum")
 
-        for row in range(self.stock_table.rowCount()):
-            status_item = self.stock_table.item(row, 13)
-            if status_item is None:
-                continue
+        if status_idx > 0:
+            for row in range(self.stock_table.rowCount()):
+                status_item = self.stock_table.item(row, status_idx)
+                if status_item is None:
+                    continue
 
-            status_text = status_item.text().strip().lower()
-            if status_text == "hazır":
-                ready_count += 1
-            elif status_text == "bekliyor":
-                waiting_count += 1
-            elif status_text == "hata":
-                error_count += 1
+                status_text = status_item.text().strip().lower()
+                if status_text in ("kullanımda", "hazır"):
+                    ready_count += 1
+                else:
+                    error_count += 1
 
-        self.ready_info_label.setText(f"Hazır durumundaki ürün sayısı: {ready_count}")
-        self.waiting_info_label.setText(f"Bekliyor durumundaki ürün sayısı: {waiting_count}")
-        self.error_info_label.setText(f"Hata durumundaki ürün sayısı: {error_count}")
-
+        self.ready_info_label.setText(f"Kullanımda durumundaki ürün sayısı: {ready_count}")
+        self.error_info_label.setText(f"Diğer durumdaki ürün sayısı: {error_count}")

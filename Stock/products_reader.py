@@ -78,10 +78,8 @@ class ProductReader:
     def __init__(self, config: Optional[ProductReaderConfig] = None):
         self.config = config or ProductReaderConfig()
 
-    def read_products(self) -> List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str]]:
-        raw_rows = self._read_from_sql()
-
-        return [self._normalize_row(row) for row in raw_rows]
+    def read_products(self) -> Tuple[List[str], List[Tuple]]:
+        return self._read_from_sql()
 
     def _build_connection_string(self) -> str:
         if self.config.db_username:
@@ -104,7 +102,7 @@ class ProductReader:
         firm_str = f"{self.config.firm_no:03d}"
         return f"LG_{firm_str}_ITEMS"
 
-    def _read_from_sql(self) -> List[Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str]]:
+    def _read_from_sql(self) -> Tuple[List[str], List[Tuple]]:
         conn_str = self._build_connection_string()
         items_table = self._build_items_table_name()
         firm_str = f"{self.config.firm_no:03d}"
@@ -112,10 +110,14 @@ class ProductReader:
 
         query = f"""
         SELECT
-            ISNULL(I.CODE, '') AS product_code,
-            ISNULL(I.NAME, '') AS product_name,
-            CAST(ISNULL(I.VAT, 0) AS NVARCHAR(10)) AS vat_rate,
-            ISNULL(U.CODE, '') AS unit_name
+            ISNULL(I.CODE, '') AS 'Ürün Kodu',
+            ISNULL(I.NAME, '') AS 'Ürün Adı',
+            ISNULL(U.CODE, '') AS 'Birim',
+            CAST(ISNULL(I.VAT, 0) AS NVARCHAR(10)) AS 'KDV Oranı',
+            CASE I.ACTIVE
+                WHEN 0 THEN 'Kullanımda'
+                WHEN 1 THEN 'Kullanım Dışı'
+            END AS 'Kullanım Durumu'
         FROM {items_table} I WITH (NOLOCK)
         OUTER APPLY (
             SELECT TOP 1 CODE 
@@ -131,34 +133,15 @@ class ProductReader:
             with pyodbc.connect(conn_str, timeout=10) as conn:
                 cursor = conn.cursor()
                 cursor.execute(query)
+                headers = [column[0] for column in cursor.description]
                 rows = cursor.fetchall()
 
                 result = []
                 for row in rows:
-                    product_code = str(row[0]).strip() if row[0] is not None else ""
-                    product_name = str(row[1]).strip() if row[1] is not None else ""
-                    vat_rate = str(row[2]).strip() if row[2] is not None else "0"
-                    unit_name = str(row[3]).strip() if len(row) > 3 and row[3] is not None else ""
+                    normalized_row = tuple(str(val).strip() if val is not None else "" for val in row)
+                    result.append(normalized_row)
 
-                    result.append(
-                        (
-                            product_code,
-                            product_name,
-                            "",
-                            unit_name,
-                            "",
-                            "",
-                            vat_rate,
-                            "",
-                            "",
-                            "",
-                            "",
-                            "",
-                            "",
-                        )
-                    )
-
-                return result
+                return headers, result
 
         except pyodbc.Error as exc:
             error_text = str(exc)
@@ -198,34 +181,4 @@ class ProductReader:
 
         except Exception as exc:
             raise Exception(f"Logo ürün bağlantı veya sorgu hatası:\n{str(exc)}")
-
-    def _normalize_row(self, row) -> Tuple[str, str, str, str, str, str, str, str, str, str, str, str, str]:
-        product_code = str(row[0]).strip() if len(row) > 0 and row[0] is not None else ""
-        product_name = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
-        category = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
-        unit_name = str(row[3]).strip() if len(row) > 3 and row[3] is not None else ""
-        source_quantity = str(row[4]).strip() if len(row) > 4 and row[4] is not None else ""
-        target_quantity = str(row[5]).strip() if len(row) > 5 and row[5] is not None else ""
-        vat_rate = str(row[6]).strip() if len(row) > 6 and row[6] is not None else "0"
-        source_price = str(row[7]).strip() if len(row) > 7 and row[7] is not None else ""
-        source_currency = str(row[8]).strip() if len(row) > 8 and row[8] is not None else ""
-        target_price = str(row[9]).strip() if len(row) > 9 and row[9] is not None else ""
-        target_currency = str(row[10]).strip() if len(row) > 10 and row[10] is not None else ""
-        description = str(row[11]).strip() if len(row) > 11 and row[11] is not None else ""
-        status = str(row[12]).strip() if len(row) > 12 and row[12] is not None else ""
-
-        return (
-            product_code,
-            product_name,
-            category,
-            unit_name,
-            source_quantity,
-            target_quantity,
-            vat_rate,
-            source_price,
-            source_currency,
-            target_price,
-            target_currency,
-            description,
-            status,
-        )
+

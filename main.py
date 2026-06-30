@@ -9,6 +9,7 @@ from Settings.settings import SettingsTab
 from Supplier.supplier import SupplierSendTab
 from Invoice.invoice import InvoiceTransferTab
 from Stock.stock import StockTab
+from Service.service import ServiceTab
 from Common.qt_compat import (
     QApplication,
     QLabel,
@@ -74,10 +75,12 @@ class MainWindow(QMainWindow):
         self.supplier_send_tab = SupplierSendTab()
         self.invoice_transfer_tab = InvoiceTransferTab()
         self.stock_tab = StockTab()
+        self.service_tab = ServiceTab()
 
         self.tabs.addTab(home_widget, "Ana Sayfa")
         self.tabs.addTab(self.invoice_transfer_tab, "Fatura Aktarımı")
         self.tabs.addTab(self.stock_tab, "Ürünler")
+        self.tabs.addTab(self.service_tab, "Hizmetler")
         self.tabs.addTab(self.supplier_send_tab, "Tedarikçi Gönderim")
         self.tabs.addTab(self.settings_tab, "Ayarlar")
 
