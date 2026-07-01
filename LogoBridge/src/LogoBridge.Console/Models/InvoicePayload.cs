@@ -27,6 +27,9 @@ public sealed class InvoicePayload
     [JsonPropertyName("invoice_type")]
     public string InvoiceType { get; set; } = "purchase";
 
+    [JsonPropertyName("logo_invoice_type")]
+    public int LogoInvoiceType { get; set; } = 1;
+
     [JsonPropertyName("document_number")]
     public string DocumentNumber { get; set; } = string.Empty;
 

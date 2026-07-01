@@ -30,6 +30,12 @@ class LogoPayloadBuilder:
         if not invoice_date:
             raise ValueError("invoice_date bulunamadı.")
 
+        is_service_invoice = any(
+            str(p.get("category_type")).lower().strip() == "service"
+            for p in invoice.get("products") or []
+            if isinstance(p, dict)
+        )
+
         payload = {
             "firm_no": self._to_int(self.logo_settings.get("firm_no"), default=1),
             "period_no": self._to_int(self.logo_settings.get("period_no"), default=1),
@@ -38,6 +44,7 @@ class LogoPayloadBuilder:
             "logo_company_code": self._safe_text(self.logo_settings.get("database")),
             "logo_working_year": self._resolve_logo_working_year(invoice),
             "invoice_type": "purchase",
+            "logo_invoice_type": 4 if is_service_invoice else 1,
             "document_number": invoice_no,
             "document_date": invoice_date,
             "document_time": self._resolve_document_time(invoice.get("invoice_date")),
@@ -97,10 +104,13 @@ class LogoPayloadBuilder:
 
             vat_rate = self._to_float(product.get("applied_vat_rate"))
             total = self._to_float(product.get("line_total_without_tax"))
+            
+            product_category_type = str(product.get("category_type")).lower().strip()
+            is_service = product_category_type == "service"
 
             line_payload = {
                 "master_code": product_code,
-                "line_type": 0,
+                "line_type": 4 if is_service else 0,
                 "description": self._build_line_description(product),
                 "quantity": quantity,
                 "unit_code": self._safe_text(product.get("unit"), default="ADET"),
