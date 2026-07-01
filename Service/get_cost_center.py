@@ -1,12 +1,17 @@
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypedDict
 
 import requests
 
 from Common.path_helper import user_data_path
 
 
-class SattaCategoryConnector:
+class CostCenterOption(TypedDict):
+    name: str
+    erp_id: str
+
+
+class SattaServiceCostCenterConnector:
     SETTINGS_FILE = user_data_path("app_settings.json")
     SESSION_FILE = user_data_path("satta_session.json")
 
@@ -16,21 +21,21 @@ class SattaCategoryConnector:
         self.username = self._safe_text(self.settings.get("username"))
         self.token = self._resolve_token()
 
-    def get_categories(self) -> List[str]:
-        response_json = self._read_category_response()
-        return self._extract_categories(response_json)
+    def get_cost_centers(self) -> List[CostCenterOption]:
+        response_json = self._read_cost_center_response()
+        return self._extract_cost_centers(response_json)
 
-    def _read_category_response(self) -> Dict[str, Any]:
+    def _read_cost_center_response(self) -> Dict[str, Any]:
         if not self.token:
             raise RuntimeError("Satta token bulunamadı. Önce ayarlardan giriş yapıp token al.")
 
-        url = self._build_category_url()
+        url = self._build_cost_center_url()
         headers = self._build_headers(self.token)
 
         try:
             response = requests.get(url, headers=headers, timeout=30)
         except requests.RequestException as exc:
-            raise RuntimeError(f"Satta kategori isteği başarısız oldu: {exc}") from exc
+            raise RuntimeError(f"Satta masraf merkezi isteği başarısız oldu: {exc}") from exc
 
         response_json = self._safe_json(response)
 
@@ -39,33 +44,70 @@ class SattaCategoryConnector:
             if not message:
                 message = response.text.strip()
             raise RuntimeError(
-                f"Satta kategorileri alınamadı. HTTP {response.status_code}. {message}"
+                f"Satta masraf merkezleri alınamadı. HTTP {response.status_code}. {message}"
             )
 
         return response_json
 
-    def _extract_categories(self, response_json: Dict[str, Any]) -> List[str]:
-        items = response_json.get("categories")
-        if not isinstance(items, list):
-            items = []
+    def _extract_cost_centers(self, response_json: Dict[str, Any]) -> List[CostCenterOption]:
+        items = self._find_collection(response_json)
+        values: List[CostCenterOption] = []
 
-        values: List[str] = []
         for item in items:
             if not isinstance(item, dict):
                 continue
-                
-            item_type = str(item.get("category_type", "")).strip().lower()
-            if item_type != "item":
+
+            name = self._first_text(item, ["name", "cost_center_name", "title", "label"])
+            if not name:
                 continue
 
-            value = self._first_text(item, ["name", "title", "label", "category_name"])
-            if value:
-                values.append(value)
+            erp_id = self._safe_text(item.get("erp_id"))
+            if not erp_id:
+                erp_id = self._safe_text(item.get("id"))
+                
+            values.append({"name": name, "erp_id": erp_id})
 
-        return self._unique_preserve_order(values)
+        return self._unique_cost_centers(values)
 
-    def _build_category_url(self) -> str:
-        return f"{self.base_url.rstrip('/')}/api/v1/list_categories"
+    def _unique_cost_centers(self, values: List[CostCenterOption]) -> List[CostCenterOption]:
+        seen = set()
+        ordered: List[CostCenterOption] = []
+
+        for value in values:
+            name = self._safe_text(value.get("name"))
+            erp_id = self._safe_text(value.get("erp_id"))
+            key = (name.casefold(), erp_id.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append({"name": name, "erp_id": erp_id})
+
+        return ordered
+
+    def _find_collection(self, response_json: Dict[str, Any]) -> List[Any]:
+        candidate_keys = [
+            "cost_centers",
+            "cost_center_list",
+            "data",
+            "items",
+            "results",
+            "response",
+        ]
+
+        for key in candidate_keys:
+            value = response_json.get(key)
+            if isinstance(value, list):
+                return value
+            if isinstance(value, dict):
+                for nested_key in ["cost_centers", "items", "results", "data"]:
+                    nested_value = value.get(nested_key)
+                    if isinstance(nested_value, list):
+                        return nested_value
+
+        return []
+
+    def _build_cost_center_url(self) -> str:
+        return f"{self.base_url.rstrip('/')}/api/v1/list_cost_centers"
 
     def _build_headers(self, token: str) -> Dict[str, str]:
         return {

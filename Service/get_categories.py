@@ -6,7 +6,7 @@ import requests
 from Common.path_helper import user_data_path
 
 
-class SattaCategoryConnector:
+class SattaServiceCategoryConnector:
     SETTINGS_FILE = user_data_path("app_settings.json")
     SESSION_FILE = user_data_path("satta_session.json")
 
@@ -55,7 +55,7 @@ class SattaCategoryConnector:
                 continue
                 
             item_type = str(item.get("category_type", "")).strip().lower()
-            if item_type != "item":
+            if item_type != "service":
                 continue
 
             value = self._first_text(item, ["name", "title", "label", "category_name"])

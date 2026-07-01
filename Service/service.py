@@ -16,9 +16,9 @@ from Common.qt_compat import (
     QWidget,
 )
 
-from Stock.get_categories import SattaCategoryConnector
-from Stock.get_cost_center import SattaCostCenterConnector
-from Stock.push_products import SattaProductPushConnector
+from Service.get_categories import SattaServiceCategoryConnector
+from Service.get_cost_center import SattaServiceCostCenterConnector
+from Service.push_services import SattaServicePushConnector
 from Service.services_reader import ServiceReader, ServiceReaderConfig
 from Common.checkable_combo import CheckableComboBox
 
@@ -198,8 +198,8 @@ class ServiceTab(QWidget):
         self.filter_services(show_no_results_message=True)
 
     def load_cost_centers_and_categories(self):
-        cost_center_connector = SattaCostCenterConnector()
-        category_connector = SattaCategoryConnector()
+        cost_center_connector = SattaServiceCostCenterConnector()
+        category_connector = SattaServiceCategoryConnector()
 
         try:
             cost_centers = cost_center_connector.get_cost_centers()
@@ -410,10 +410,10 @@ class ServiceTab(QWidget):
             QMessageBox.warning(self, "Seçim Yok", "Önce aktarılacak (ve birimi girilmiş) hizmetleri seçin.")
             return
 
-        connector = SattaProductPushConnector()
+        connector = SattaServicePushConnector()
 
         try:
-            connector.push_products(selected_services)
+            connector.push_services(selected_services)
         except Exception as exc:
             QMessageBox.critical(self, "Aktarım Hatası", f"Seçili hizmetler Satta'ya gönderilemedi:\n{exc}")
             return
