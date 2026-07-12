@@ -16,7 +16,6 @@ class LogoPayloadBuilder:
         invoice_date = self._format_datetime(invoice.get("invoice_date"))
         payment_date = self._format_datetime(invoice.get("payment_date"))
         invoice_note = self._safe_text(invoice.get("note"))
-        seller_name = self._safe_text(invoice.get("seller_name"))
 
         if not invoice_id:
             raise ValueError("invoice_id bulunamadı.")
@@ -52,7 +51,7 @@ class LogoPayloadBuilder:
             "invoice_number": invoice_no,
             "group_code": "1",
             "do_code": "~",
-            "description": seller_name,
+            "description": "",
             "auxiliary_code": self._safe_text(invoice.get("reference_no")),
             "authorization_code": "",
             "trading_group": "",
