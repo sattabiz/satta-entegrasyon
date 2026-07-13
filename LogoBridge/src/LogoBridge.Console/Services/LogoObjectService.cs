@@ -408,6 +408,7 @@ public sealed class LogoObjectService
             dataObject.DataFields.FieldByName("SOURCE_WH").Value = payload.WarehouseNr;
             dataObject.DataFields.FieldByName("DIVISION").Value = payload.Division;
             dataObject.DataFields.FieldByName("DEPARTMENT").Value = payload.Department;
+            try { dataObject.DataFields.FieldByName("FACTORY").Value = payload.FactoryNr; } catch { }
 
             if (payload.TransactionCurrencyId > 0)
             {
@@ -520,6 +521,10 @@ public sealed class LogoObjectService
                     currentLine.FieldByName("SOURCEINDEX").Value = line.WarehouseNr;
                 else
                     currentLine.FieldByName("SOURCEINDEX").Value = payload.WarehouseNr;
+
+                try { currentLine.FieldByName("FACTORY").Value = payload.FactoryNr; } catch { }
+                try { currentLine.FieldByName("DIVISION").Value = line.Division > 0 ? line.Division : payload.Division; } catch { }
+                try { currentLine.FieldByName("DEPARTMENT").Value = line.Department > 0 ? line.Department : payload.Department; } catch { }
             }
 
             errorMessage = string.Empty;
