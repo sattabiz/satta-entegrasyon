@@ -417,6 +417,9 @@ public sealed class LogoObjectService
                 try { dataObject.DataFields.FieldByName("CURRSEL_TOTALS").Value = (short)2; } catch (Exception e) { currErrors.Add("CURRSEL_TOTALS: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("CURRSEL_DETAILS").Value = (short)2; } catch (Exception e) { currErrors.Add("CURRSEL_DETAILS: " + e.Message); }
 
+                try { dataObject.DataFields.FieldByName("TR_CURR").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("TR_CURR_short: " + e.Message); }
+                try { dataObject.DataFields.FieldByName("TR_CURR").Value = (int)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("TR_CURR_int: " + e.Message); }
+
                 try { dataObject.DataFields.FieldByName("TRCURR").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("TRCURR_short: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TRCURR").Value = (int)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("TRCURR_int: " + e.Message); }
 
@@ -426,9 +429,10 @@ public sealed class LogoObjectService
                 try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_TRANSACTIN_short: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = (int)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_TRANSACTIN_int: " + e.Message); }
                 
+                try { dataObject.DataFields.FieldByName("TR_RATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TR_RATE: " + e.Message); }
+                try { dataObject.DataFields.FieldByName("TRRATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TRRATE: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TC_XRATE: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TC_RATE: " + e.Message); }
-                try { dataObject.DataFields.FieldByName("TRRATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TRRATE: " + e.Message); }
 
                 try { dataObject.DataFields.FieldByName("RC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
                 try { dataObject.DataFields.FieldByName("RC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
@@ -493,6 +497,7 @@ public sealed class LogoObjectService
 
                     try { currentLine.FieldByName("LINECURRSEL").Value = (short)2; } catch { }
                     try { currentLine.FieldByName("PRCURRSEL").Value = (short)2; } catch { }
+                    try { currentLine.FieldByName("TR_CURR").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("CURR_TRANSACTIN").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("TRCURR").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("PRCURR").Value = (short)line.CurrencyId; } catch { }
@@ -501,6 +506,7 @@ public sealed class LogoObjectService
                     try { currentLine.FieldByName("CURR_TYPE").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("PR_RATE").Value = (double)line.CurrencyRate; } catch { }
                     try { currentLine.FieldByName("TRRATE").Value = (double)line.CurrencyRate; } catch { }
+                    try { currentLine.FieldByName("TR_RATE").Value = (double)line.CurrencyRate; } catch { }
                     
                     try { currentLine.FieldByName("FC_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
                     try { currentLine.FieldByName("ED_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }

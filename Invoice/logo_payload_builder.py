@@ -95,7 +95,10 @@ class LogoPayloadBuilder:
             currency_rate = self._resolve_line_exchange_rate(invoice, line_currency_code)
 
             if currency_id != 0:
-                unit_price = tl_price if tl_price > 0 else raw_price
+                if tl_price <= 0 and currency_rate > 0:
+                    unit_price = raw_price * currency_rate
+                else:
+                    unit_price = tl_price if tl_price > 0 else raw_price
                 foreign_price = raw_price
             else:
                 unit_price = tl_price if tl_price > 0 else raw_price
