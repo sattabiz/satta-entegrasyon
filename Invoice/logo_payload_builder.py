@@ -124,7 +124,7 @@ class LogoPayloadBuilder:
                 "exchange_rate": currency_rate,
                 "currency_id": currency_id,
                 "currency_rate": currency_rate,
-                "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=0),
+                "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=1),
                 "source_index": self._to_int(self.logo_settings.get("source_index"), default=0),
                 "division": self._to_int(self.logo_settings.get("division"), default=0),
                 "department": self._to_int(self.logo_settings.get("department"), default=0),
