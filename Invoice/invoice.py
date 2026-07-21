@@ -510,44 +510,82 @@ class InvoiceTransferTab(QWidget):
         try:
             transfer_result = transfer_service.transfer_invoices(selected_raw_invoices)
         except Exception as exc:
-            QMessageBox.critical(self, "Aktarım Hatası", f"Logo aktarım servisi çalıştırılamadı:\n{exc}")
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Critical)
+            msg_box.setWindowTitle("Aktarım Hatası")
+            msg_box.setText(f"<b>Logo aktarım servisi çalıştırılamadı:</b><br>{exc}")
+            msg_box.exec()
             return
 
         successful_invoice_ids = transfer_result.get("successful_invoice_ids", [])
         successful_invoice_nos = transfer_result.get("successful_invoice_nos", [])
-        failed_results = transfer_result.get("failed_results", [])
+        failed_results = list(transfer_result.get("failed_results", []))
 
-        if not successful_invoice_ids:
-            error_text = "\n".join(failed_results) if failed_results else "Logo'ya aktarılabilecek fatura bulunamadı."
-            QMessageBox.critical(self, "Aktarım Hatası", error_text)
-            return
-
+        satta_marked_nos = []
         connector = SattaInvoicePushConnector()
-        try:
-            connector.mark_invoices_saved(successful_invoice_ids)
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "Satta Güncelleme Hatası",
-                f"Logo'ya aktarılan faturalar Satta üzerinde işaretlenemedi:\n{exc}",
+
+        for inv_id, inv_no in zip(successful_invoice_ids, successful_invoice_nos):
+            try:
+                connector.mark_invoice_saved(inv_id)
+                satta_marked_nos.append(inv_no)
+            except Exception as exc:
+                failed_results.append(f"{inv_no}: Logo'ya aktarıldı fakat Satta üzerinde işaretlenemedi - {exc}")
+
+        if satta_marked_nos:
+            self.remove_transferred_invoices_from_ui(satta_marked_nos)
+
+        self._show_transfer_result_dialog(
+            success_count=len(satta_marked_nos),
+            failed_results=failed_results
+        )
+
+    def _show_transfer_result_dialog(self, success_count: int, failed_results: list):
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Fatura Aktarım Sonucu")
+
+        if success_count > 0 and not failed_results:
+            msg_box.setIcon(QMessageBox.Information)
+        elif success_count > 0 and failed_results:
+            msg_box.setIcon(QMessageBox.Warning)
+        else:
+            msg_box.setIcon(QMessageBox.Critical)
+
+        html_parts = []
+
+        if success_count > 0:
+            html_parts.append(
+                f"<div style='color: #2e7d32; font-size: 13px; font-weight: bold; margin-bottom: 8px;'>"
+                f"✓ {success_count} adet fatura başarıyla Logo'ya aktarıldı ve Satta üzerinde işaretlendi."
+                f"</div>"
             )
-            return
 
-        successful_invoice_no_set = set(successful_invoice_nos)
-        if not successful_invoice_no_set:
-            successful_invoice_no_set = {
-                invoice_no
-                for invoice_id, invoice_no in zip(selected_invoice_ids, selected_invoice_nos)
-                if invoice_id in successful_invoice_ids
-            }
-
-        self.remove_transferred_invoices_from_ui(list(successful_invoice_no_set))
-
-        success_message = f"{len(successful_invoice_ids)} fatura Logo'ya aktarıldı ve Satta üzerinde işaretlendi."
         if failed_results:
-            success_message += "\n\nAktarılamayan faturalar:\n" + "\n".join(failed_results)
+            html_parts.append(
+                f"<div style='color: #c62828; font-size: 13px; font-weight: bold; margin-top: 10px; margin-bottom: 6px;'>"
+                f"⚠️ Aktarılamayan / İşaretlenemeyen Faturalar ({len(failed_results)}):"
+                f"</div>"
+            )
+            html_parts.append("<ul style='margin-top: 4px; margin-bottom: 8px; padding-left: 20px;'>")
+            for item in failed_results:
+                safe_item = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                if ":" in safe_item:
+                    no_part, err_part = safe_item.split(":", 1)
+                    html_parts.append(
+                        f"<li style='margin-bottom: 4px;'><b>{no_part.strip()}:</b> "
+                        f"<span style='color: #444;'>{err_part.strip()}</span></li>"
+                    )
+                else:
+                    html_parts.append(f"<li style='margin-bottom: 4px;'>{safe_item}</li>")
+            html_parts.append("</ul>")
+            html_parts.append(
+                "<div style='color: #666; font-size: 11px; font-style: italic; margin-top: 6px;'>"
+                "Not: Hatalı faturalar listede kalmıştır. Sorunları giderdikten sonra tekrar aktarabilirsiniz."
+                "</div>"
+            )
 
-        QMessageBox.information(self, "Aktarım Sonucu", success_message)
+        msg_box.setText("".join(html_parts))
+        msg_box.setTextFormat(Qt.RichText)
+        msg_box.exec()
 
     def update_selected_count(self):
         selected_count = 0
