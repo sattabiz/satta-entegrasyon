@@ -59,7 +59,7 @@ class LogoPayloadBuilder:
             "department": self._to_int(self.logo_settings.get("department"), default=0),
             "source_index": self._to_int(self.logo_settings.get("source_index"), default=0),
             "factory_nr": self._to_int(self.logo_settings.get("factory_nr"), default=0),
-            "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=1),
+            "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=0),
             "currency_code": self._resolve_invoice_currency(invoice),
             "exchange_rate": self._resolve_exchange_rate(invoice),
             "transaction_currency_id": self._resolve_currency_id(self._resolve_invoice_currency(invoice)),

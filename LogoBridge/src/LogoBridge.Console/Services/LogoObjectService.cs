@@ -441,7 +441,7 @@ public sealed class LogoObjectService
                 {
                     try
                     {
-                        string logPath = @"C:\Program Files (x86)\Satta\currency_log.txt";
+                        string logPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "currency_log.txt");
                         System.IO.File.AppendAllText(logPath, "\n--- " + System.DateTime.Now.ToString() + " ---\n" + string.Join("\n", currErrors) + "\n");
                     }
                     catch { }
@@ -495,6 +495,7 @@ public sealed class LogoObjectService
                     try { currentLine.FieldByName("CURR_PRICE").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("EDT_CURR").Value = (short)line.CurrencyId; } catch { }
 
+                    try { currentLine.FieldByName("CURRSEL").Value = (short)2; } catch { }
                     try { currentLine.FieldByName("LINECURRSEL").Value = (short)2; } catch { }
                     try { currentLine.FieldByName("PRCURRSEL").Value = (short)2; } catch { }
                     try { currentLine.FieldByName("TR_CURR").Value = (short)line.CurrencyId; } catch { }
@@ -504,10 +505,13 @@ public sealed class LogoObjectService
                     try { currentLine.FieldByName("PCURR").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("CURRENCY").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("CURR_TYPE").Value = (short)line.CurrencyId; } catch { }
+                    
+                    try { currentLine.FieldByName("PRRATE").Value = (double)line.CurrencyRate; } catch { }
                     try { currentLine.FieldByName("PR_RATE").Value = (double)line.CurrencyRate; } catch { }
                     try { currentLine.FieldByName("TRRATE").Value = (double)line.CurrencyRate; } catch { }
                     try { currentLine.FieldByName("TR_RATE").Value = (double)line.CurrencyRate; } catch { }
                     
+                    try { currentLine.FieldByName("PRPRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
                     try { currentLine.FieldByName("FC_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
                     try { currentLine.FieldByName("ED_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
                     try { currentLine.FieldByName("EDT_PRICE").Value = (double)line.ForeignCurrencyPrice; } catch { }
@@ -516,11 +520,14 @@ public sealed class LogoObjectService
                 }
                 else
                 {
+                    try { currentLine.FieldByName("CURRSEL").Value = (short)0; } catch { }
                     try { currentLine.FieldByName("LINECURRSEL").Value = (short)0; } catch { }
                     try { currentLine.FieldByName("PRCURRSEL").Value = (short)0; } catch { }
                     try { currentLine.FieldByName("CURR_PRICE").Value = (short)0; } catch { }
                     try { currentLine.FieldByName("EDT_CURR").Value = (short)0; } catch { }
                     try { currentLine.FieldByName("TRCURR").Value = (short)0; } catch { }
+                    try { currentLine.FieldByName("PRPRICE").Value = 0.0; } catch { }
+                    try { currentLine.FieldByName("PRRATE").Value = 0.0; } catch { }
                 }
                 
                 if (line.WarehouseNr > 0)
