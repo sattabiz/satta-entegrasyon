@@ -490,6 +490,19 @@ public sealed class LogoObjectService
                 currentLine.FieldByName("UNIT_CONV1").Value = (double)1.0;
                 currentLine.FieldByName("UNIT_CONV2").Value = (double)1.0;
 
+                if (!string.IsNullOrWhiteSpace(line.Description))
+                {
+                    try { currentLine.FieldByName("DESCRIPTION").Value = line.Description; } catch { }
+                    try { currentLine.FieldByName("LINE_EXP").Value = line.Description; } catch { }
+                }
+
+                if (!string.IsNullOrWhiteSpace(line.Description2))
+                {
+                    try { currentLine.FieldByName("DESCRIPTION2").Value = line.Description2; } catch { }
+                    try { currentLine.FieldByName("DESCRIPTION_2").Value = line.Description2; } catch { }
+                    try { currentLine.FieldByName("LINE_EXP2").Value = line.Description2; } catch { }
+                }
+
                 if (line.CurrencyId > 0)
                 {
                     try { currentLine.FieldByName("CURR_PRICE").Value = (short)line.CurrencyId; } catch { }

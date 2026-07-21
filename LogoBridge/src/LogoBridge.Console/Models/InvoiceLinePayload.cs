@@ -16,6 +16,9 @@ public sealed class InvoiceLinePayload
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
 
+    [JsonPropertyName("description2")]
+    public string Description2 { get; set; } = string.Empty;
+
     [JsonPropertyName("quantity")]
     public decimal Quantity { get; set; }
 

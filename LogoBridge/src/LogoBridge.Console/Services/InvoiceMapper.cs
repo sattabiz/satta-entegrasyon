@@ -82,6 +82,7 @@ public sealed class InvoiceMapper
             ["VAT_RATE"] = line.VatRate.ToString(CultureInfo.InvariantCulture),
             ["TOTAL"] = line.Total.ToString(CultureInfo.InvariantCulture),
             ["DESCRIPTION"] = line.Description,
+            ["DESCRIPTION2"] = line.Description2,
         };
 
         if (line.CurrencyId > 0)
