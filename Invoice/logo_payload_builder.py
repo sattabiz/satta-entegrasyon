@@ -114,7 +114,7 @@ class LogoPayloadBuilder:
                 "master_code": product_code,
                 "line_type": 4 if is_service else 0,
                 "description": self._build_line_description(product),
-                "description2": self._safe_text(product.get("name")),
+                "description2": self._safe_text(product.get("description")),
                 "quantity": quantity,
                 "unit_code": self._safe_text(product.get("unit"), default="ADET"),
                 "unit_price": unit_price,
