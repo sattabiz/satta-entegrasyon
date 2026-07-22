@@ -517,14 +517,18 @@ class InvoiceTransferTab(QWidget):
             msg_box.exec()
             return
 
-        successful_invoice_ids = transfer_result.get("successful_invoice_ids", [])
-        successful_invoice_nos = transfer_result.get("successful_invoice_nos", [])
+        successful_invoices = transfer_result.get("successful_invoices", [])
         failed_results = list(transfer_result.get("failed_results", []))
 
         satta_marked_nos = []
         connector = SattaInvoicePushConnector()
 
-        for inv_id, inv_no in zip(successful_invoice_ids, successful_invoice_nos):
+        for item in successful_invoices:
+            inv_id = item.get("id")
+            inv_no = item.get("no")
+            if inv_id is None:
+                failed_results.append(f"{inv_no}: Logo'ya aktarıldı fakat Satta invoice_id eksik.")
+                continue
             try:
                 connector.mark_invoice_saved(inv_id)
                 satta_marked_nos.append(inv_no)

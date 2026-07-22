@@ -492,15 +492,43 @@ public sealed class LogoObjectService
 
                 if (!string.IsNullOrWhiteSpace(line.Description))
                 {
-                    try { currentLine.FieldByName("DESCRIPTION").Value = line.Description; } catch { }
-                    try { currentLine.FieldByName("LINE_EXP").Value = line.Description; } catch { }
+                    var desc1 = line.Description;
+                    try { currentLine.FieldByName("DESCRIPTION").Value = desc1; } catch { }
+                    try { currentLine.FieldByName("LINE_EXP").Value = desc1; } catch { }
+                    try { currentLine.FieldByName("LINE_EXP1").Value = desc1; } catch { }
+                    try { currentLine.FieldByName("LINEEXP").Value = desc1; } catch { }
                 }
 
                 if (!string.IsNullOrWhiteSpace(line.Description2))
                 {
-                    try { currentLine.FieldByName("DESCRIPTION2").Value = line.Description2; } catch { }
-                    try { currentLine.FieldByName("DESCRIPTION_2").Value = line.Description2; } catch { }
-                    try { currentLine.FieldByName("LINE_EXP2").Value = line.Description2; } catch { }
+                    var desc2 = line.Description2;
+                    try { currentLine.FieldByName("LINE_EXP2").Value = desc2; } catch { }
+                    try { currentLine.FieldByName("DESCRIPTION2").Value = desc2; } catch { }
+                    try { currentLine.FieldByName("DESCRIPTION_2").Value = desc2; } catch { }
+                    try { currentLine.FieldByName("LINE_EXP_2").Value = desc2; } catch { }
+                    try { currentLine.FieldByName("LINEEXP2").Value = desc2; } catch { }
+                    try { currentLine.FieldByName("LINE_EXCT2").Value = desc2; } catch { }
+                    try { currentLine.FieldByName("DET_EXP2").Value = desc2; } catch { }
+                    try { currentLine.FieldByName("DETAILS_EXP2").Value = desc2; } catch { }
+
+                    try
+                    {
+                        dynamic dataFields = currentLine.DataFields;
+                        int fieldCount = dataFields.Count;
+                        for (int i = 0; i < fieldCount; i++)
+                        {
+                            try
+                            {
+                                string fn = Convert.ToString(dataFields[i].Name, CultureInfo.InvariantCulture)?.ToUpperInvariant() ?? string.Empty;
+                                if ((fn.Contains("EXP") || fn.Contains("DESC")) && (fn.EndsWith("2") || fn.Contains("_2") || fn.Contains("2")))
+                                {
+                                    dataFields[i].Value = desc2;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
                 }
 
                 if (line.CurrencyId > 0)

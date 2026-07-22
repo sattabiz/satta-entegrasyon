@@ -65,11 +65,6 @@ class LogoBridgeRunner:
             if stderr_text:
                 details.setdefault("stderr", stderr_text)
 
-            if completed_process.returncode != 0 and r.get("is_success") is True:
-                r["is_success"] = False
-                r["message"] = r.get("message") or "Logo bridge hata kodu ile sonlandı."
-                r.setdefault("error_code", "BRIDGE_PROCESS_FAILED")
-
         return result
 
     def _resolve_bridge_executable_path(self) -> str:

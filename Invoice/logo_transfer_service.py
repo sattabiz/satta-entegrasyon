@@ -58,6 +58,8 @@ class LogoTransferService:
                 "bridge_results": bridge_results,
             }
 
+        successful_invoices: List[Dict[str, Any]] = []
+
         for info, bridge_result in zip(invoice_info_list, batch_results):
             invoice_id = info["id"]
             invoice_no = info["no"]
@@ -85,6 +87,7 @@ class LogoTransferService:
                     message += f"\n\nHata Detayı: {specific_error}"
 
             if is_success:
+                successful_invoices.append({"id": invoice_id, "no": invoice_no})
                 if invoice_id is not None:
                     successful_invoice_ids.append(invoice_id)
                 successful_invoice_nos.append(invoice_no)
@@ -92,6 +95,7 @@ class LogoTransferService:
                 failed_results.append(f"{invoice_no}: {message}")
 
         return {
+            "successful_invoices": successful_invoices,
             "successful_invoice_ids": successful_invoice_ids,
             "successful_invoice_nos": successful_invoice_nos,
             "failed_results": failed_results,

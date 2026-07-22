@@ -33,6 +33,18 @@ class SattaInvoicePushConnector:
 
     def _post_invoice_saved(self, invoice_id: int) -> Dict[str, Any]:
         if not self.token:
+            try:
+                from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
+                connector = SattaInvoiceConnector(SattaInvoiceConfig(
+                    base_url=self.base_url,
+                    username=self.username,
+                    password=self._safe_text(self.settings.get("password")),
+                ))
+                self.token = connector.ensure_token()
+            except Exception:
+                pass
+
+        if not self.token:
             raise RuntimeError("Satta token bulunamadı. Önce ayarlardan giriş yapıp token al.")
 
         url = self._build_push_url()
@@ -41,6 +53,16 @@ class SattaInvoicePushConnector:
 
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=30)
+            if response.status_code == 401:
+                from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
+                connector = SattaInvoiceConnector(SattaInvoiceConfig(
+                    base_url=self.base_url,
+                    username=self.username,
+                    password=self._safe_text(self.settings.get("password")),
+                ))
+                self.token = connector.ensure_token(force_refresh=True)
+                headers = self._build_headers(self.token)
+                response = requests.post(url, json=payload, headers=headers, timeout=30)
         except requests.RequestException as exc:
             raise RuntimeError(f"Satta fatura işaretleme isteği başarısız oldu: {exc}") from exc
 
