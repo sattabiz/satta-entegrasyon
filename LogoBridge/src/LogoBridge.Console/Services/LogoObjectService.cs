@@ -428,14 +428,14 @@ public sealed class LogoObjectService
 
                 try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_TRANSACTIN_short: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("CURR_TRANSACTIN").Value = (int)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_TRANSACTIN_int: " + e.Message); }
+
+                try { dataObject.DataFields.FieldByName("CURR_INVOICE").Value = (short)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_INVOICE_short: " + e.Message); }
+                try { dataObject.DataFields.FieldByName("CURR_INVOICE").Value = (int)payload.TransactionCurrencyId; } catch (Exception e) { currErrors.Add("CURR_INVOICE_int: " + e.Message); }
                 
                 try { dataObject.DataFields.FieldByName("TR_RATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TR_RATE: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TRRATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TRRATE: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TC_XRATE: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TC_RATE: " + e.Message); }
-
-                try { dataObject.DataFields.FieldByName("RC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
-                try { dataObject.DataFields.FieldByName("RC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch { }
 
                 if (currErrors.Count > 0)
                 {
@@ -541,6 +541,8 @@ public sealed class LogoObjectService
                     try { currentLine.FieldByName("PRCURRSEL").Value = (short)2; } catch { }
                     try { currentLine.FieldByName("TR_CURR").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("CURR_TRANSACTIN").Value = (short)line.CurrencyId; } catch { }
+                    try { currentLine.FieldByName("CURR_TRANSACTION").Value = (short)line.CurrencyId; } catch { }
+                    try { currentLine.FieldByName("CURR_TRANSACTION").Value = (int)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("TRCURR").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("PRCURR").Value = (short)line.CurrencyId; } catch { }
                     try { currentLine.FieldByName("PCURR").Value = (short)line.CurrencyId; } catch { }
@@ -567,6 +569,8 @@ public sealed class LogoObjectService
                     try { currentLine.FieldByName("CURR_PRICE").Value = (short)0; } catch { }
                     try { currentLine.FieldByName("EDT_CURR").Value = (short)0; } catch { }
                     try { currentLine.FieldByName("TRCURR").Value = (short)0; } catch { }
+                    try { currentLine.FieldByName("CURR_TRANSACTIN").Value = (short)0; } catch { }
+                    try { currentLine.FieldByName("CURR_TRANSACTION").Value = (short)0; } catch { }
                     try { currentLine.FieldByName("PRPRICE").Value = 0.0; } catch { }
                     try { currentLine.FieldByName("PRRATE").Value = 0.0; } catch { }
                 }
