@@ -14,7 +14,7 @@ from Common.qt_compat import (
     QWidget,
 )
 
-from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
+from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector, is_token_expired
 from Common.path_helper import ensure_parent_directory, user_data_path
 
 
@@ -54,9 +54,15 @@ class SettingsTab(QWidget):
         self.save_button = QPushButton("Ayarları Kaydet")
         root_layout.addWidget(self.save_button)
 
+        self._loading_settings = False
+
         self.satta_login_button.clicked.connect(self.handle_satta_login)
         self.connector_test_button.clicked.connect(self.handle_connector_test)
         self.save_button.clicked.connect(self.save_settings)
+
+        self.satta_base_url_input.textChanged.connect(self.on_satta_credentials_changed)
+        self.satta_username_input.textChanged.connect(self.on_satta_credentials_changed)
+        self.satta_password_input.textChanged.connect(self.on_satta_credentials_changed)
 
         self.load_settings()
 
@@ -338,15 +344,41 @@ class SettingsTab(QWidget):
 
         connector = SattaInvoiceConnector(self.create_satta_config())
 
+        button_text = self.satta_login_button.text()
+
         try:
             token = connector.ensure_token(force_refresh=True)
         except Exception as exc:
-            QMessageBox.critical(self, "Satta Giriş Hatası", f"Satta token alınamadı:\n{exc}")
+            action_name = "yenileme" if button_text == "Token Yenile" else "giriş"
+            QMessageBox.critical(self, "Satta Giriş Hatası", f"Satta tokenı alınamadı/güncellenemedi:\n{exc}")
             return
 
         self.satta_token_input.setText(token)
         self.save_settings(show_message=False)
-        QMessageBox.information(self, "Satta Giriş", "Satta token başarıyla alındı ve kaydedildi.")
+        self.update_satta_button_state()
+
+        if button_text == "Token Yenile":
+            QMessageBox.information(self, "Satta Oturum", "Satta tokenı başarıyla yenilendi.")
+        else:
+            QMessageBox.information(self, "Satta Giriş", "Satta tokenı başarıyla alındı ve kaydedildi.")
+
+    def update_satta_button_state(self) -> None:
+        token = self.satta_token_input.text().strip()
+        if not token:
+            self.satta_login_button.setText("Satta'ya Giriş Yap")
+            self.satta_login_button.setVisible(True)
+        else:
+            if is_token_expired(token):
+                self.satta_login_button.setText("Token Yenile")
+                self.satta_login_button.setVisible(True)
+            else:
+                self.satta_login_button.setVisible(False)
+
+    def on_satta_credentials_changed(self) -> None:
+        if getattr(self, "_loading_settings", False):
+            return
+        self.satta_login_button.setText("Satta'ya Giriş Yap")
+        self.satta_login_button.setVisible(True)
 
     def handle_connector_test(self) -> None:
         if self.active_connector == "logo":
@@ -614,42 +646,44 @@ class SettingsTab(QWidget):
             QMessageBox.information(self, "Ayarlar", "Ayarlar kaydedildi.")
 
     def load_settings(self) -> None:
-        settings_data = self.load_existing_settings()
+        self._loading_settings = True
+        try:
+            settings_data = self.load_existing_settings()
 
-        satta_settings = settings_data.get("satta", {})
-        self.satta_base_url_input.setText(str(satta_settings.get("base_url", "")))
-        self.satta_username_input.setText(str(satta_settings.get("username", "")))
-        self.satta_password_input.setText(str(satta_settings.get("password", "")))
-        self.satta_token_input.setText(str(satta_settings.get("token", "")))
+            satta_settings = settings_data.get("satta", {})
+            self.satta_base_url_input.setText(str(satta_settings.get("base_url", "")))
+            self.satta_username_input.setText(str(satta_settings.get("username", "")))
+            self.satta_password_input.setText(str(satta_settings.get("password", "")))
+            self.satta_token_input.setText(str(satta_settings.get("token", "")))
 
-        if self.active_connector == "logo":
-            logo_settings = settings_data.get("logo", {})
-            self.logo_server_input.setText(str(logo_settings.get("server", "")))
-            self.logo_database_input.setText(str(logo_settings.get("database", "")))
-            self.logo_db_username_input.setText(str(logo_settings.get("db_username", "")))
-            self.logo_db_password_input.setText(str(logo_settings.get("db_password", "")))
-            self.logo_firm_no_input.setValue(int(logo_settings.get("firm_no", 1) or 1))
-            self.logo_period_no_input.setValue(int(logo_settings.get("period_no", 1) or 1))
-            self.logo_user_input.setText(str(logo_settings.get("logo_user", "")))
-            self.logo_user_password_input.setText(str(logo_settings.get("logo_password", "")))
-            return
+            if self.active_connector == "logo":
+                logo_settings = settings_data.get("logo", {})
+                self.logo_server_input.setText(str(logo_settings.get("server", "")))
+                self.logo_database_input.setText(str(logo_settings.get("database", "")))
+                self.logo_db_username_input.setText(str(logo_settings.get("db_username", "")))
+                self.logo_db_password_input.setText(str(logo_settings.get("db_password", "")))
+                self.logo_firm_no_input.setValue(int(logo_settings.get("firm_no", 1) or 1))
+                self.logo_period_no_input.setValue(int(logo_settings.get("period_no", 1) or 1))
+                self.logo_user_input.setText(str(logo_settings.get("logo_user", "")))
+                self.logo_user_password_input.setText(str(logo_settings.get("logo_password", "")))
+            elif self.active_connector == "sap":
+                sap_settings = settings_data.get("sap", {})
+                self.sap_host_input.setText(str(sap_settings.get("host", "")))
+                self.sap_system_number_input.setText(str(sap_settings.get("system_number", "")))
+                self.sap_client_input.setText(str(sap_settings.get("client", "")))
+                self.sap_language_input.setText(str(sap_settings.get("language", "TR")))
+                self.sap_username_input.setText(str(sap_settings.get("sap_user", "")))
+                self.sap_password_input.setText(str(sap_settings.get("sap_password", "")))
+            elif self.active_connector == "canias":
+                canias_settings = settings_data.get("canias", {})
+                self.canias_host_input.setText(str(canias_settings.get("host", "")))
+                self.canias_tenant_input.setText(str(canias_settings.get("tenant", "")))
+                self.canias_username_input.setText(str(canias_settings.get("canias_user", "")))
+                self.canias_password_input.setText(str(canias_settings.get("canias_password", "")))
 
-        if self.active_connector == "sap":
-            sap_settings = settings_data.get("sap", {})
-            self.sap_host_input.setText(str(sap_settings.get("host", "")))
-            self.sap_system_number_input.setText(str(sap_settings.get("system_number", "")))
-            self.sap_client_input.setText(str(sap_settings.get("client", "")))
-            self.sap_language_input.setText(str(sap_settings.get("language", "TR")))
-            self.sap_username_input.setText(str(sap_settings.get("sap_user", "")))
-            self.sap_password_input.setText(str(sap_settings.get("sap_password", "")))
-            return
-
-        if self.active_connector == "canias":
-            canias_settings = settings_data.get("canias", {})
-            self.canias_host_input.setText(str(canias_settings.get("host", "")))
-            self.canias_tenant_input.setText(str(canias_settings.get("tenant", "")))
-            self.canias_username_input.setText(str(canias_settings.get("canias_user", "")))
-            self.canias_password_input.setText(str(canias_settings.get("canias_password", "")))
+            self.update_satta_button_state()
+        finally:
+            self._loading_settings = False
 
     def check_logo_test_button_visibility(self):
         if self.active_connector != "logo":

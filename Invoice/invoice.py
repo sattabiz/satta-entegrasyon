@@ -13,9 +13,10 @@ from Common.qt_compat import (
     QVBoxLayout,
     QWidget,
     QHeaderView,
-    QComboBox
+    QComboBox,
+    QTabWidget
 )
-from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
+from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector, is_token_expired
 from Invoice.push_invoice import SattaInvoicePushConnector
 from Invoice.logo_transfer_service import LogoTransferService
 
@@ -413,8 +414,51 @@ class InvoiceTransferTab(QWidget):
             self.detail_title_label.setText("Seçili fatura kalemleri")
 
     def load_invoices(self):
-        invoice_rows, invoice_details, invoice_id_map, invoice_raw_map = self.fetch_invoices()
-        self.apply_invoice_data(invoice_rows, invoice_details, invoice_id_map, invoice_raw_map)
+        try:
+            invoice_rows, invoice_details, invoice_id_map, invoice_raw_map = self.fetch_invoices()
+            self.apply_invoice_data(invoice_rows, invoice_details, invoice_id_map, invoice_raw_map)
+        except Exception as exc:
+            satta_settings = self.load_satta_settings()
+            token = satta_settings.get("token", "")
+            username = satta_settings.get("username", "")
+            password = satta_settings.get("password", "")
+
+            is_cred_empty = not username or not password
+
+            if is_cred_empty:
+                msg = (
+                    "Satta e-posta veya şifresi Ayarlar sekmesinde girilmemiş.\n\n"
+                )
+            elif not token or is_token_expired(token):
+                msg = (
+                    "Satta oturum süreniz dolmuş veya token bulunamadı. Oturumunuzu yenileyiniz.\n\n"
+                )
+            else:
+                msg = (
+                    f"Satta faturaları alınırken bir hata oluştu:\n{exc}\n\n"
+                )
+
+            reply = QMessageBox.warning(
+                self,
+                "Satta Bağlantı Hatası",
+                msg,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+
+            if reply == QMessageBox.Yes:
+                self.switch_to_settings_tab()
+
+    def switch_to_settings_tab(self):
+        parent = self.parentWidget()
+        while parent is not None:
+            if isinstance(parent, QTabWidget):
+                for i in range(parent.count()):
+                    if parent.tabText(i) == "Ayarlar":
+                        parent.setCurrentIndex(i)
+                        break
+                break
+            parent = parent.parentWidget()
 
     def populate_invoice_table(self, rows):
         self.invoice_table.setRowCount(0)
