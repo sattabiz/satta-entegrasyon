@@ -64,6 +64,7 @@ class LogoPayloadBuilder:
             "exchange_rate": self._resolve_exchange_rate(invoice),
             "transaction_currency_id": self._resolve_currency_id(self._resolve_invoice_currency(invoice)),
             "transaction_currency_rate": self._resolve_exchange_rate(invoice),
+            "usd_rate": self._resolve_line_exchange_rate(invoice, "USD"),
             "notes": self._build_notes(invoice_id, payment_date, invoice_note),
             "lines": self._build_invoice_lines(invoice),
         }

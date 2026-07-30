@@ -471,6 +471,17 @@ public sealed class LogoObjectService
                 try { dataObject.DataFields.FieldByName("TC_XRATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TC_XRATE: " + e.Message); }
                 try { dataObject.DataFields.FieldByName("TC_RATE").Value = (double)payload.TransactionCurrencyRate; } catch (Exception e) { currErrors.Add("TC_RATE: " + e.Message); }
 
+                if (payload.UsdRate > 0)
+                {
+                    try { dataObject.DataFields.FieldByName("REPCURR").Value = (short)1; } catch (Exception e) { currErrors.Add("REPCURR: " + e.Message); }
+                    try { dataObject.DataFields.FieldByName("REPORTCURR").Value = (short)1; } catch { }
+                    try { dataObject.DataFields.FieldByName("REPORT_CURR").Value = (short)1; } catch { }
+
+                    try { dataObject.DataFields.FieldByName("REPRATE").Value = (double)payload.UsdRate; } catch (Exception e) { currErrors.Add("REPRATE: " + e.Message); }
+                    try { dataObject.DataFields.FieldByName("REPORTRATE").Value = (double)payload.UsdRate; } catch { }
+                    try { dataObject.DataFields.FieldByName("REPORT_RATE").Value = (double)payload.UsdRate; } catch { }
+                }
+
                 if (currErrors.Count > 0)
                 {
                     try
@@ -609,6 +620,17 @@ public sealed class LogoObjectService
                     try { currentLine.FieldByName("PRRATE").Value = 0.0; } catch { }
                 }
                 
+                if (payload.UsdRate > 0)
+                {
+                    try { currentLine.FieldByName("REPCURR").Value = (short)1; } catch { }
+                    try { currentLine.FieldByName("REPORTCURR").Value = (short)1; } catch { }
+                    try { currentLine.FieldByName("REPORT_CURR").Value = (short)1; } catch { }
+
+                    try { currentLine.FieldByName("REPRATE").Value = (double)payload.UsdRate; } catch { }
+                    try { currentLine.FieldByName("REPORTRATE").Value = (double)payload.UsdRate; } catch { }
+                    try { currentLine.FieldByName("REPORT_RATE").Value = (double)payload.UsdRate; } catch { }
+                }
+
                 if (line.WarehouseNr > 0)
                     currentLine.FieldByName("SOURCEINDEX").Value = line.WarehouseNr;
                 else
