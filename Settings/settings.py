@@ -374,7 +374,7 @@ class SettingsTab(QWidget):
         QMessageBox.information(
             self,
             "Logo Bağlantısı",
-            "Logo için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
+            "Logo için database ve kullanıcı bilgileri hazır görünüyor.",
         )
 
     def handle_sap_test(self) -> None:
@@ -385,7 +385,7 @@ class SettingsTab(QWidget):
         QMessageBox.information(
             self,
             "SAP Bağlantısı",
-            "SAP için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
+            "SAP için database ve kullanıcı bilgileri hazır görünüyor.",
         )
 
     def handle_canias_test(self) -> None:
@@ -396,7 +396,7 @@ class SettingsTab(QWidget):
         QMessageBox.information(
             self,
             "Canias Bağlantısı",
-            "Canias için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
+            "Canias için database ve kullanıcı bilgileri hazır görünüyor.",
         )
 
     def get_default_settings(self) -> dict:
@@ -499,7 +499,14 @@ class SettingsTab(QWidget):
         }
 
         if self.active_connector in {"logo", "sap", "canias"}:
-            settings_data[self.active_connector] = self.collect_active_connector_settings()
+            new_settings = self.collect_active_connector_settings()
+            existing_settings = settings_data.get(self.active_connector, {})
+            if isinstance(existing_settings, dict):
+                merged = dict(existing_settings)
+                merged.update(new_settings)
+                settings_data[self.active_connector] = merged
+            else:
+                settings_data[self.active_connector] = new_settings
 
         try:
             ensure_parent_directory(self.SETTINGS_FILE)

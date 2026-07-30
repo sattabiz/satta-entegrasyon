@@ -12,7 +12,8 @@ from Common.qt_compat import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QHeaderView
+    QHeaderView,
+    QComboBox
 )
 from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
 from Invoice.push_invoice import SattaInvoicePushConnector
@@ -55,6 +56,20 @@ class InvoiceTransferTab(QWidget):
         search_row.addWidget(self.search_button)
 
         root_layout.addLayout(search_row)
+
+        options_row = QHBoxLayout()
+        warehouse_label = QLabel("Aktarım Ambarı:")
+        self.warehouse_dropdown = QComboBox()
+        self.warehouse_dropdown.setMinimumHeight(32)
+        self.warehouse_dropdown.setMinimumWidth(200)
+        self.refresh_warehouses_button = QPushButton("Ambarları Al")
+        self.refresh_warehouses_button.setMinimumHeight(32)
+        self.refresh_warehouses_button.clicked.connect(self.fetch_and_save_warehouses)
+        options_row.addWidget(warehouse_label)
+        options_row.addWidget(self.warehouse_dropdown)
+        options_row.addWidget(self.refresh_warehouses_button)
+        options_row.addStretch()
+        root_layout.addLayout(options_row)
 
         button_layout = QHBoxLayout()
         self.load_button = QPushButton("Faturaları Satta'dan Al")
@@ -130,6 +145,10 @@ class InvoiceTransferTab(QWidget):
         self.invoice_table.itemChanged.connect(self.handle_table_item_changed)
         self.update_edit_button_text()
 
+        self.load_cached_warehouses()
+        self.select_saved_warehouse()
+        self.warehouse_dropdown.currentIndexChanged.connect(self.save_selected_warehouse)
+
 
     def load_active_connector(self):
         try:
@@ -180,6 +199,186 @@ class InvoiceTransferTab(QWidget):
             return {}
 
         return settings_data.get("logo", {})
+
+    def load_cached_warehouses(self):
+        self.warehouse_dropdown.clear()
+        logo_settings = self.load_logo_settings()
+        
+        server = str(logo_settings.get("server", "")).strip()
+        database = str(logo_settings.get("database", "")).strip()
+        firm_no = int(logo_settings.get("firm_no", 1))
+        
+        cached_config = logo_settings.get("warehouses_connection_config", {})
+        cached_server = str(cached_config.get("server", "")).strip()
+        cached_database = str(cached_config.get("database", "")).strip()
+        cached_firm_no = int(cached_config.get("firm_no", 0))
+        
+        settings_match = (
+            server == cached_server and 
+            database == cached_database and 
+            firm_no == cached_firm_no and 
+            bool(server)
+        )
+        
+        cached_list = logo_settings.get("warehouses_list")
+        if settings_match and cached_list and isinstance(cached_list, list):
+            for item in cached_list:
+                if isinstance(item, dict):
+                    nr = item.get("nr")
+                    name = item.get("name", "")
+                    if nr is not None:
+                        self.warehouse_dropdown.addItem(f"{nr:03d}, {name}", nr)
+            self.refresh_warehouses_button.setVisible(False)
+        else:
+            self.refresh_warehouses_button.setVisible(True)
+        
+        if self.warehouse_dropdown.count() == 0:
+            self.warehouse_dropdown.addItem("Ambar Seçiniz", None)
+
+    def fetch_and_save_warehouses(self):
+        logo_settings = self.load_logo_settings()
+        server = str(logo_settings.get("server", "")).strip()
+        database = str(logo_settings.get("database", "")).strip()
+        db_username = str(logo_settings.get("db_username", "")).strip()
+        db_password = str(logo_settings.get("db_password", ""))
+        firm_no = int(logo_settings.get("firm_no", 1))
+
+        if not server or not database:
+            QMessageBox.warning(
+                self,
+                "Bağlantı Ayarı Eksik",
+                "Logo veritabanı bağlantı ayarları eksik. Lütfen önce Ayarlar sekmesinden bağlantı bilgilerini doldurun."
+            )
+            return
+
+        if db_username:
+            conn_str = (
+                f"DRIVER={{SQL Server}};"
+                f"SERVER={server};"
+                f"DATABASE={database};"
+                f"UID={db_username};"
+                f"PWD={db_password};"
+            )
+        else:
+            conn_str = (
+                f"DRIVER={{SQL Server}};"
+                f"SERVER={server};"
+                f"DATABASE={database};"
+                f"Trusted_Connection=yes;"
+            )
+
+        import pyodbc
+        query = "SELECT NR, NAME FROM L_CAPIWHOUSE WHERE FIRMNR = ? ORDER BY NR"
+        
+        try:
+            with pyodbc.connect(conn_str, timeout=10) as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (firm_no,))
+                rows = cursor.fetchall()
+                
+                if not rows:
+                    QMessageBox.information(
+                        self,
+                        "Ambar Bulunamadı",
+                        f"Logo veritabanında {firm_no} numaralı firma için ambar tanımı bulunamadı."
+                    )
+                    return
+                
+                try:
+                    self.warehouse_dropdown.currentIndexChanged.disconnect(self.save_selected_warehouse)
+                except (TypeError, RuntimeError):
+                    pass
+
+                self.warehouse_dropdown.clear()
+                warehouses_list = []
+                for row in rows:
+                    nr = int(row[0])
+                    name = str(row[1]).strip()
+                    self.warehouse_dropdown.addItem(f"{nr:03d}, {name}", nr)
+                    warehouses_list.append({"nr": nr, "name": name})
+                
+                connection_config = {
+                    "server": server,
+                    "database": database,
+                    "firm_no": firm_no
+                }
+                self.save_warehouses_list_to_settings(warehouses_list, connection_config)
+                self.warehouse_dropdown.setCurrentIndex(0)
+                
+                self.warehouse_dropdown.currentIndexChanged.connect(self.save_selected_warehouse)
+                self.save_selected_warehouse()
+
+                self.refresh_warehouses_button.setVisible(False)
+
+                QMessageBox.information(
+                    self,
+                    "Başarılı",
+                    f"Logo üzerinden {len(warehouses_list)} adet ambar bilgisi başarıyla çekildi ve güncellendi."
+                )
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Ambar Bilgisi Alınamadı",
+                f"Logo ambar bilgileri veri tabanından yüklenirken bir hata oluştu:\n{exc}"
+            )
+
+    def save_warehouses_list_to_settings(self, warehouses_list, connection_config):
+        try:
+            settings_data = {}
+            if SETTINGS_FILE.exists():
+                settings_data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            
+            if "logo" not in settings_data:
+                settings_data["logo"] = {}
+                
+            settings_data["logo"]["warehouses_list"] = warehouses_list
+            settings_data["logo"]["warehouses_connection_config"] = connection_config
+            
+            from Common.path_helper import ensure_parent_directory
+            ensure_parent_directory(SETTINGS_FILE)
+            SETTINGS_FILE.write_text(json.dumps(settings_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def select_saved_warehouse(self):
+        logo_settings = self.load_logo_settings()
+        saved_wh = logo_settings.get("last_selected_warehouse")
+        if saved_wh is not None:
+            try:
+                target_wh = int(saved_wh)
+                for idx in range(self.warehouse_dropdown.count()):
+                    item_val = self.warehouse_dropdown.itemData(idx)
+                    if item_val is not None and int(item_val) == target_wh:
+                        self.warehouse_dropdown.setCurrentIndex(idx)
+                        break
+            except (ValueError, TypeError):
+                pass
+
+    def save_selected_warehouse(self):
+        if self.warehouse_dropdown.count() == 0:
+            return
+        
+        current_data = self.warehouse_dropdown.currentData()
+        if current_data is None:
+            return
+            
+        selected_wh = int(current_data)
+        
+        try:
+            settings_data = {}
+            if SETTINGS_FILE.exists():
+                settings_data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            
+            if "logo" not in settings_data:
+                settings_data["logo"] = {}
+                
+            settings_data["logo"]["last_selected_warehouse"] = selected_wh
+            
+            from Common.path_helper import ensure_parent_directory
+            ensure_parent_directory(SETTINGS_FILE)
+            SETTINGS_FILE.write_text(json.dumps(settings_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
 
     def apply_invoice_data(self, invoice_rows, invoice_details, invoice_id_map, invoice_raw_map):
         self.all_invoices = [tuple(str(value) if value is not None else "" for value in row) for row in invoice_rows]
@@ -505,6 +704,19 @@ class InvoiceTransferTab(QWidget):
             return
 
         logo_settings = self.load_logo_settings()
+        selected_wh_data = self.warehouse_dropdown.currentData()
+        if selected_wh_data is None:
+            QMessageBox.warning(
+                self,
+                "Ambar Seçilmedi",
+                "Lütfen faturayı aktarmadan önce listeden geçerli bir ambar seçin.\n"
+                "Eğer ambar listesi boşsa, önce ambarları güncellemek için 'Ambarları Al' butonuna tıklayın."
+            )
+            return
+            
+        logo_settings["warehouse_nr"] = int(selected_wh_data)
+        logo_settings["source_index"] = int(selected_wh_data)
+
         transfer_service = LogoTransferService(logo_settings)
 
         try:
@@ -602,3 +814,14 @@ class InvoiceTransferTab(QWidget):
 
     def update_status_summary(self):
         self.update_selected_count()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            self.warehouse_dropdown.currentIndexChanged.disconnect(self.save_selected_warehouse)
+        except (TypeError, RuntimeError):
+            pass
+            
+        self.load_cached_warehouses()
+        self.select_saved_warehouse()
+        self.warehouse_dropdown.currentIndexChanged.connect(self.save_selected_warehouse)
