@@ -99,7 +99,7 @@ class ServiceReader:
         LEFT JOIN {srvunita_table} SU WITH (NOLOCK) ON S.LOGICALREF = SU.SRVREF AND SU.LINENR = 1
         LEFT JOIN {unitsetl_table} U WITH (NOLOCK) ON SU.UNITLINEREF = U.LOGICALREF
         WHERE S.CARDTYPE = 1 AND ISNULL(S.ACTIVE, 0) = 0
-        ORDER BY S.CODE
+        ORDER BY S.LOGICALREF DESC
         """
 
         try:

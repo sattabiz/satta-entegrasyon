@@ -126,7 +126,7 @@ class ProductReader:
             ORDER BY LINENR
         ) U
         WHERE ISNULL(I.ACTIVE, 0) = 0
-        ORDER BY I.CODE
+        ORDER BY I.LOGICALREF DESC
         """
 
         try:
