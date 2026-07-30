@@ -65,6 +65,40 @@ public sealed class LogoObjectService
         return results;
     }
 
+    public BridgeResult TestConnection(InvoicePayload payload)
+    {
+        object? unityApplication = null;
+        try
+        {
+            unityApplication = CreateUnityApplication();
+            var connectSucceeded = CallBooleanMethod(unityApplication, "Connect");
+            if (!connectSucceeded)
+            {
+                return BridgeResult.Failure("Logo Objects Connect başarısız oldu. LObjects dll veya kayıtlı COM objesi bulunamadı.", "LOGO_CONNECT_FAILED");
+            }
+
+            if (!TryUserLogin(unityApplication, payload))
+            {
+                return BridgeResult.Failure("Logo kullanıcı girişi başarısız oldu. Kullanıcı adı veya şifre hatalı olabilir.", "LOGO_USER_LOGIN_FAILED");
+            }
+            
+            if (!TryCompanyLogin(unityApplication, payload))
+            {
+                return BridgeResult.Failure("Logo firma girişi başarısız oldu. Firma veya Dönem numarası hatalı olabilir.", "LOGO_COMPANY_LOGIN_FAILED");
+            }
+
+            return BridgeResult.Success("Logo ve veritabanı bağlantısı başarıyla kuruldu.");
+        }
+        catch (Exception ex)
+        {
+            return BridgeResult.Failure($"Logo bağlantı testi sırasında hata: {ex.Message}", "LOGO_TEST_EXCEPTION");
+        }
+        finally
+        {
+            SafeLogoutAndDisconnect(unityApplication);
+        }
+    }
+
     private BridgeResult TransferSinglePurchaseInvoice(object unityApplication, InvoicePayload payload)
     {
         object? dataObject = null;
