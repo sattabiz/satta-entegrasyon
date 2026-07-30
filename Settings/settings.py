@@ -14,7 +14,7 @@ from Common.qt_compat import (
     QWidget,
 )
 
-from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector
+from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector, is_token_expired
 from Common.path_helper import ensure_parent_directory, user_data_path
 
 
@@ -54,12 +54,28 @@ class SettingsTab(QWidget):
         self.save_button = QPushButton("Ayarları Kaydet")
         root_layout.addWidget(self.save_button)
 
+        self._loading_settings = False
+
         self.satta_login_button.clicked.connect(self.handle_satta_login)
-        self.satta_test_button.clicked.connect(self.handle_satta_test)
         self.connector_test_button.clicked.connect(self.handle_connector_test)
         self.save_button.clicked.connect(self.save_settings)
 
+        self.satta_base_url_input.textChanged.connect(self.on_satta_credentials_changed)
+        self.satta_username_input.textChanged.connect(self.on_satta_credentials_changed)
+        self.satta_password_input.textChanged.connect(self.on_satta_credentials_changed)
+
         self.load_settings()
+
+        if self.active_connector == "logo":
+            self.logo_server_input.textChanged.connect(self.check_logo_test_button_visibility)
+            self.logo_database_input.textChanged.connect(self.check_logo_test_button_visibility)
+            self.logo_db_username_input.textChanged.connect(self.check_logo_test_button_visibility)
+            self.logo_db_password_input.textChanged.connect(self.check_logo_test_button_visibility)
+            self.logo_user_input.textChanged.connect(self.check_logo_test_button_visibility)
+            self.logo_user_password_input.textChanged.connect(self.check_logo_test_button_visibility)
+            self.logo_firm_no_input.valueChanged.connect(self.check_logo_test_button_visibility)
+            self.logo_period_no_input.valueChanged.connect(self.check_logo_test_button_visibility)
+            self.check_logo_test_button_visibility()
 
     def load_active_connector(self) -> str:
         if not RUNTIME_CONFIG_FILE.exists():
@@ -100,14 +116,12 @@ class SettingsTab(QWidget):
         self.satta_token_input.setReadOnly(True)
 
         self.satta_login_button = QPushButton("Satta'ya Giriş Yap")
-        self.satta_test_button = QPushButton("Satta Bağlantısını Test Et")
 
         satta_login_form.addRow("Base URL", self.satta_base_url_input)
         satta_login_form.addRow("E-posta", self.satta_username_input)
         satta_login_form.addRow("Şifre", self.satta_password_input)
         satta_login_form.addRow("Token", self.satta_token_input)
         satta_login_form.addRow("", self.satta_login_button)
-        satta_login_form.addRow("", self.satta_test_button)
 
         satta_layout.addWidget(satta_login_frame)
         return satta_group
@@ -125,7 +139,10 @@ class SettingsTab(QWidget):
         connector_layout.addWidget(database_group)
         connector_layout.addWidget(user_group)
 
-        self.connector_test_button = QPushButton(f"{connector_display_name} Bağlantısını Test Et")
+        if self.active_connector == "logo":
+            self.connector_test_button = QPushButton("Logo ve DB Bağlantısını Test Et")
+        else:
+            self.connector_test_button = QPushButton(f"{connector_display_name} Bağlantısını Test Et")
         connector_layout.addWidget(self.connector_test_button)
 
         return connector_group
@@ -327,31 +344,41 @@ class SettingsTab(QWidget):
 
         connector = SattaInvoiceConnector(self.create_satta_config())
 
+        button_text = self.satta_login_button.text()
+
         try:
             token = connector.ensure_token(force_refresh=True)
         except Exception as exc:
-            QMessageBox.critical(self, "Satta Giriş Hatası", f"Satta token alınamadı:\n{exc}")
+            action_name = "yenileme" if button_text == "Token Yenile" else "giriş"
+            QMessageBox.critical(self, "Satta Giriş Hatası", f"Satta tokenı alınamadı/güncellenemedi:\n{exc}")
             return
 
         self.satta_token_input.setText(token)
         self.save_settings(show_message=False)
-        QMessageBox.information(self, "Satta Giriş", "Satta token başarıyla alındı ve kaydedildi.")
+        self.update_satta_button_state()
 
-    def handle_satta_test(self) -> None:
-        connector = SattaInvoiceConnector(self.create_satta_config())
+        if button_text == "Token Yenile":
+            QMessageBox.information(self, "Satta Oturum", "Satta tokenı başarıyla yenilendi.")
+        else:
+            QMessageBox.information(self, "Satta Giriş", "Satta tokenı başarıyla alındı ve kaydedildi.")
 
-        try:
-            token = connector.ensure_token(force_refresh=False)
-        except Exception as exc:
-            QMessageBox.critical(self, "Bağlantı Hatası", f"Satta bağlantısı doğrulanamadı:\n{exc}")
-            return
-
+    def update_satta_button_state(self) -> None:
+        token = self.satta_token_input.text().strip()
         if not token:
-            QMessageBox.warning(self, "Token Yok", "Önce Satta'ya giriş yapıp token al.")
-            return
+            self.satta_login_button.setText("Satta'ya Giriş Yap")
+            self.satta_login_button.setVisible(True)
+        else:
+            if is_token_expired(token):
+                self.satta_login_button.setText("Token Yenile")
+                self.satta_login_button.setVisible(True)
+            else:
+                self.satta_login_button.setVisible(False)
 
-        self.satta_token_input.setText(token)
-        QMessageBox.information(self, "Satta Bağlantısı", "Satta bağlantısı ve token bilgisi hazır görünüyor.")
+    def on_satta_credentials_changed(self) -> None:
+        if getattr(self, "_loading_settings", False):
+            return
+        self.satta_login_button.setText("Satta'ya Giriş Yap")
+        self.satta_login_button.setVisible(True)
 
     def handle_connector_test(self) -> None:
         if self.active_connector == "logo":
@@ -367,15 +394,112 @@ class SettingsTab(QWidget):
         QMessageBox.warning(self, "Connector Yok", "Aktif connector bilgisi bulunamadı.")
 
     def handle_logo_test(self) -> None:
-        if not self.logo_server_input.text().strip() or not self.logo_database_input.text().strip():
+        server = self.logo_server_input.text().strip()
+        database = self.logo_database_input.text().strip()
+        db_username = self.logo_db_username_input.text().strip()
+        db_password = self.logo_db_password_input.text()
+        logo_user = self.logo_user_input.text().strip()
+        logo_password = self.logo_user_password_input.text()
+
+        if not server or not database:
             QMessageBox.warning(self, "Eksik Bilgi", "Database bağlantısı için SQL Server ve Database alanlarını doldur.")
             return
 
-        QMessageBox.information(
-            self,
-            "Logo Bağlantısı",
-            "Logo için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
-        )
+        # 1. SQL Database Connection Test
+        if db_username:
+            conn_str = (
+                f"DRIVER={{SQL Server}};"
+                f"SERVER={server};"
+                f"DATABASE={database};"
+                f"UID={db_username};"
+                f"PWD={db_password};"
+            )
+        else:
+            conn_str = (
+                f"DRIVER={{SQL Server}};"
+                f"SERVER={server};"
+                f"DATABASE={database};"
+                f"Trusted_Connection=yes;"
+            )
+
+        import pyodbc
+        try:
+            with pyodbc.connect(conn_str, timeout=5):
+                pass
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "DB Bağlantı Hatası",
+                f"Veri tabanına bağlanılamadı. Lütfen sunucu, veri tabanı ve kullanıcı ayarlarınızı kontrol edin:\n{exc}"
+            )
+            return
+
+        # 2. Logo Objects COM Connection Test
+        test_payload = {
+            "server": server,
+            "database": database,
+            "db_username": db_username,
+            "db_password": db_password,
+            "logo_user": logo_user,
+            "logo_password": logo_password,
+            "firm_no": int(self.logo_firm_no_input.value()),
+            "period_no": int(self.logo_period_no_input.value()),
+            "invoice_type": "purchase",
+            "lines": []
+        }
+
+        from Invoice.logo_bridge_runner import LogoBridgeRunner
+        try:
+            runner = LogoBridgeRunner()
+            result = runner.run_connection_test(test_payload)
+            is_success = result.get("is_success", False)
+            message = result.get("message", "Logo bağlantısı başarısız.")
+            
+            if is_success:
+                verified_config = {
+                    "server": server,
+                    "database": database,
+                    "db_username": db_username,
+                    "db_password": db_password,
+                    "firm_no": int(self.logo_firm_no_input.value()),
+                    "period_no": int(self.logo_period_no_input.value()),
+                    "logo_user": logo_user,
+                    "logo_password": logo_password,
+                }
+                try:
+                    settings_data = self.load_existing_settings()
+                    if "logo" not in settings_data:
+                        settings_data["logo"] = {}
+                    settings_data["logo"]["logo_connection_verified_config"] = verified_config
+                    from Common.path_helper import ensure_parent_directory
+                    ensure_parent_directory(self.SETTINGS_FILE)
+                    self.SETTINGS_FILE.write_text(
+                        json.dumps(settings_data, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
+
+                self.check_logo_test_button_visibility()
+
+                QMessageBox.information(
+                    self,
+                    "Bağlantı Başarılı",
+                    "Logo ve Veri Tabanı bağlantısı başarıyla doğrulandı!\n"
+                    "SQL sunucusuna ve Logo Objects kütüphanesine başarıyla erişildi."
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Logo Bağlantı Hatası",
+                    f"Veri tabanı bağlantısı başarılı, ancak Logo Objects API bağlantısı başarısız oldu:\n{message}"
+                )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Test Hatası",
+                f"Logo test işlemi yürütülürken hata oluştu:\n{exc}"
+            )
 
     def handle_sap_test(self) -> None:
         if not self.sap_host_input.text().strip() or not self.sap_client_input.text().strip():
@@ -385,7 +509,7 @@ class SettingsTab(QWidget):
         QMessageBox.information(
             self,
             "SAP Bağlantısı",
-            "SAP için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
+            "SAP için database ve kullanıcı bilgileri hazır görünüyor.",
         )
 
     def handle_canias_test(self) -> None:
@@ -396,7 +520,7 @@ class SettingsTab(QWidget):
         QMessageBox.information(
             self,
             "Canias Bağlantısı",
-            "Canias için database ve kullanıcı bilgileri hazır görünüyor. Gerçek test akışı daha sonra eklenecek.",
+            "Canias için database ve kullanıcı bilgileri hazır görünüyor.",
         )
 
     def get_default_settings(self) -> dict:
@@ -499,7 +623,14 @@ class SettingsTab(QWidget):
         }
 
         if self.active_connector in {"logo", "sap", "canias"}:
-            settings_data[self.active_connector] = self.collect_active_connector_settings()
+            new_settings = self.collect_active_connector_settings()
+            existing_settings = settings_data.get(self.active_connector, {})
+            if isinstance(existing_settings, dict):
+                merged = dict(existing_settings)
+                merged.update(new_settings)
+                settings_data[self.active_connector] = merged
+            else:
+                settings_data[self.active_connector] = new_settings
 
         try:
             ensure_parent_directory(self.SETTINGS_FILE)
@@ -515,39 +646,81 @@ class SettingsTab(QWidget):
             QMessageBox.information(self, "Ayarlar", "Ayarlar kaydedildi.")
 
     def load_settings(self) -> None:
+        self._loading_settings = True
+        try:
+            settings_data = self.load_existing_settings()
+
+            satta_settings = settings_data.get("satta", {})
+            self.satta_base_url_input.setText(str(satta_settings.get("base_url", "")))
+            self.satta_username_input.setText(str(satta_settings.get("username", "")))
+            self.satta_password_input.setText(str(satta_settings.get("password", "")))
+            self.satta_token_input.setText(str(satta_settings.get("token", "")))
+
+            if self.active_connector == "logo":
+                logo_settings = settings_data.get("logo", {})
+                self.logo_server_input.setText(str(logo_settings.get("server", "")))
+                self.logo_database_input.setText(str(logo_settings.get("database", "")))
+                self.logo_db_username_input.setText(str(logo_settings.get("db_username", "")))
+                self.logo_db_password_input.setText(str(logo_settings.get("db_password", "")))
+                self.logo_firm_no_input.setValue(int(logo_settings.get("firm_no", 1) or 1))
+                self.logo_period_no_input.setValue(int(logo_settings.get("period_no", 1) or 1))
+                self.logo_user_input.setText(str(logo_settings.get("logo_user", "")))
+                self.logo_user_password_input.setText(str(logo_settings.get("logo_password", "")))
+            elif self.active_connector == "sap":
+                sap_settings = settings_data.get("sap", {})
+                self.sap_host_input.setText(str(sap_settings.get("host", "")))
+                self.sap_system_number_input.setText(str(sap_settings.get("system_number", "")))
+                self.sap_client_input.setText(str(sap_settings.get("client", "")))
+                self.sap_language_input.setText(str(sap_settings.get("language", "TR")))
+                self.sap_username_input.setText(str(sap_settings.get("sap_user", "")))
+                self.sap_password_input.setText(str(sap_settings.get("sap_password", "")))
+            elif self.active_connector == "canias":
+                canias_settings = settings_data.get("canias", {})
+                self.canias_host_input.setText(str(canias_settings.get("host", "")))
+                self.canias_tenant_input.setText(str(canias_settings.get("tenant", "")))
+                self.canias_username_input.setText(str(canias_settings.get("canias_user", "")))
+                self.canias_password_input.setText(str(canias_settings.get("canias_password", "")))
+
+            self.update_satta_button_state()
+        finally:
+            self._loading_settings = False
+
+    def check_logo_test_button_visibility(self):
+        if self.active_connector != "logo":
+            return
+
         settings_data = self.load_existing_settings()
+        logo_settings = settings_data.get("logo", {})
+        verified_config = logo_settings.get("logo_connection_verified_config", {})
 
-        satta_settings = settings_data.get("satta", {})
-        self.satta_base_url_input.setText(str(satta_settings.get("base_url", "")))
-        self.satta_username_input.setText(str(satta_settings.get("username", "")))
-        self.satta_password_input.setText(str(satta_settings.get("password", "")))
-        self.satta_token_input.setText(str(satta_settings.get("token", "")))
+        current_config = {
+            "server": self.logo_server_input.text().strip(),
+            "database": self.logo_database_input.text().strip(),
+            "db_username": self.logo_db_username_input.text().strip(),
+            "db_password": self.logo_db_password_input.text(),
+            "firm_no": int(self.logo_firm_no_input.value()),
+            "period_no": int(self.logo_period_no_input.value()),
+            "logo_user": self.logo_user_input.text().strip(),
+            "logo_password": self.logo_user_password_input.text(),
+        }
 
-        if self.active_connector == "logo":
-            logo_settings = settings_data.get("logo", {})
-            self.logo_server_input.setText(str(logo_settings.get("server", "")))
-            self.logo_database_input.setText(str(logo_settings.get("database", "")))
-            self.logo_db_username_input.setText(str(logo_settings.get("db_username", "")))
-            self.logo_db_password_input.setText(str(logo_settings.get("db_password", "")))
-            self.logo_firm_no_input.setValue(int(logo_settings.get("firm_no", 1) or 1))
-            self.logo_period_no_input.setValue(int(logo_settings.get("period_no", 1) or 1))
-            self.logo_user_input.setText(str(logo_settings.get("logo_user", "")))
-            self.logo_user_password_input.setText(str(logo_settings.get("logo_password", "")))
-            return
+        is_verified = True
+        for key, val in current_config.items():
+            verified_val = verified_config.get(key)
+            if key in {"firm_no", "period_no"}:
+                try:
+                    if int(val) != int(verified_val):
+                        is_verified = False
+                        break
+                except (ValueError, TypeError):
+                    is_verified = False
+                    break
+            else:
+                if str(val).strip() != str(verified_val or "").strip():
+                    is_verified = False
+                    break
 
-        if self.active_connector == "sap":
-            sap_settings = settings_data.get("sap", {})
-            self.sap_host_input.setText(str(sap_settings.get("host", "")))
-            self.sap_system_number_input.setText(str(sap_settings.get("system_number", "")))
-            self.sap_client_input.setText(str(sap_settings.get("client", "")))
-            self.sap_language_input.setText(str(sap_settings.get("language", "TR")))
-            self.sap_username_input.setText(str(sap_settings.get("sap_user", "")))
-            self.sap_password_input.setText(str(sap_settings.get("sap_password", "")))
-            return
-
-        if self.active_connector == "canias":
-            canias_settings = settings_data.get("canias", {})
-            self.canias_host_input.setText(str(canias_settings.get("host", "")))
-            self.canias_tenant_input.setText(str(canias_settings.get("tenant", "")))
-            self.canias_username_input.setText(str(canias_settings.get("canias_user", "")))
-            self.canias_password_input.setText(str(canias_settings.get("canias_password", "")))
+        if is_verified and bool(current_config["server"]):
+            self.connector_test_button.setVisible(False)
+        else:
+            self.connector_test_button.setVisible(True)

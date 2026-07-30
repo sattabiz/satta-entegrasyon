@@ -16,17 +16,28 @@ internal static class Program
 
         try
         {
-            if (args.Length == 0)
+            string payloadPath;
+            bool isTestConnection = false;
+
+            if (args.Length > 1 && args[0] == "--test-connection")
             {
-                fatalResult = BridgeResult.Failure(
-                    message: "Payload dosya yolu verilmedi.",
-                    errorCode: "ARGUMENT_MISSING");
-                results.Add(fatalResult);
-                WriteResult(results);
-                return 1;
+                isTestConnection = true;
+                payloadPath = args[1];
+            }
+            else
+            {
+                if (args.Length == 0)
+                {
+                    fatalResult = BridgeResult.Failure(
+                        message: "Payload dosya yolu verilmedi.",
+                        errorCode: "ARGUMENT_MISSING");
+                    results.Add(fatalResult);
+                    WriteResult(results);
+                    return 1;
+                }
+                payloadPath = args[0];
             }
 
-            var payloadPath = args[0];
             if (string.IsNullOrWhiteSpace(payloadPath))
             {
                 fatalResult = BridgeResult.Failure(
@@ -38,6 +49,24 @@ internal static class Program
             }
 
             var payloads = jsonFileService.ReadFromFile<System.Collections.Generic.List<InvoicePayload>>(payloadPath);
+            
+            if (isTestConnection)
+            {
+                if (payloads.Count == 0)
+                {
+                    fatalResult = BridgeResult.Failure(
+                        message: "Payload listesi boş olamaz.",
+                        errorCode: "PAYLOAD_EMPTY");
+                    results.Add(fatalResult);
+                    WriteResult(results);
+                    return 1;
+                }
+                var testResult = logoObjectService.TestConnection(payloads[0]);
+                results.Add(testResult);
+                WriteResult(results);
+                return testResult.IsSuccess ? 0 : 1;
+            }
+
             foreach(var payload in payloads)
             {
                 payload.Validate();

@@ -67,6 +67,44 @@ class LogoBridgeRunner:
 
         return result
 
+    def run_connection_test(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        payload_file_path = self._write_payload_file([payload])
+
+        try:
+            completed_process = subprocess.run(
+                [self.bridge_executable_path, "--test-connection", str(payload_file_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+                encoding="utf-8",
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                f"Logo bridge çalıştırılamadı. Dosya bulunamadı: {self.bridge_executable_path}"
+            ) from exc
+        except OSError as exc:
+            raise RuntimeError(f"Logo bridge başlatılamadı: {exc}") from exc
+        finally:
+            self._cleanup_payload_file(payload_file_path)
+
+        stdout_text = (completed_process.stdout or "").strip()
+        stderr_text = (completed_process.stderr or "").strip()
+
+        result = self._parse_bridge_output(stdout_text)
+        if result and isinstance(result, list) and len(result) > 0:
+            return result[0]
+            
+        return {
+            "is_success": False,
+            "message": "Logo bridge geçerli bir JSON test sonucu döndürmedi.",
+            "error_code": "BRIDGE_OUTPUT_INVALID",
+            "details": {
+                "stdout": stdout_text,
+                "stderr": stderr_text,
+                "return_code": str(completed_process.returncode),
+            },
+        }
+
     def _resolve_bridge_executable_path(self) -> str:
         candidate_paths = [
             project_path("LogoBridge", "publish", "LogoBridge.Console.exe"),

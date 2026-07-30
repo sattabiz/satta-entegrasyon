@@ -1,5 +1,7 @@
 import json
 import requests
+import base64
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +12,30 @@ from Common.path_helper import user_data_path
 InvoiceUiRow = Tuple[str, str, str, str, str, str, str, str]
 InvoiceDetailRow = Tuple[str, str, str, str, str, str]
 InvoiceRawMap = Dict[int, Dict[str, Any]]
+
+
+def is_token_expired(token: str) -> bool:
+    if not token:
+        return True
+
+    # Mock tokens do not expire
+    if token.startswith("mock_token_"):
+        return False
+
+    try:
+        parts = token.split('.')
+        if len(parts) != 3:
+            return True
+        payload_b64 = parts[1]
+        payload_b64 += '=' * (4 - len(payload_b64) % 4)
+        payload_json = base64.b64decode(payload_b64).decode('utf-8')
+        payload = json.loads(payload_json)
+        exp = payload.get('exp')
+        if exp:
+            return time.time() >= exp - 60
+    except Exception:
+        pass
+    return True
 
 
 ## TODO: Dinamik buton adları hazırlanacak 

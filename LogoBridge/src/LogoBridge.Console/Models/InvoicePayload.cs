@@ -84,6 +84,9 @@ public sealed class InvoicePayload
     [JsonPropertyName("transaction_currency_rate")]
     public decimal TransactionCurrencyRate { get; set; }
 
+    [JsonPropertyName("usd_rate")]
+    public decimal UsdRate { get; set; }
+
     [JsonPropertyName("notes")]
     public List<string> Notes { get; set; } = new();
 
