@@ -222,9 +222,10 @@ class SupplierSendTab(QWidget):
             for col_index, value in enumerate(normalized_row, start=1):
                 item = QTableWidgetItem(value)
 
-                if col_index == 1:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                elif is_row_editable:
+                # Sadece İlgili Kişi (3), Telefon (4), E-posta (5) ve Vergi No (6) kolonları düzenlenebilir.
+                is_editable_col = col_index in (3, 4, 5, 6)
+
+                if is_row_editable and is_editable_col:
                     item.setFlags(item.flags() | Qt.ItemIsEditable)
                 else:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
@@ -259,7 +260,8 @@ class SupplierSendTab(QWidget):
             if supplier_code:
                 self.editable_supplier_codes.add(supplier_code)
 
-            for col in range(2, self.supplier_table.columnCount()):
+            # Sadece İlgili Kişi (3), Telefon (4), E-posta (5) ve Vergi No (6) kolonlarını düzenlenebilir yapıyoruz.
+            for col in (3, 4, 5, 6):
                 item = self.supplier_table.item(row, col)
                 if item is None:
                     continue
