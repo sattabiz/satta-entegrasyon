@@ -47,6 +47,7 @@ public sealed class LogoObjectService
 
             foreach (var payload in payloads)
             {
+                AdjustPayloadCurrencyByCari(unityApplication, payload);
                 ResolveUsdRateFromLogo(unityApplication, payload);
                 var result = TransferSinglePurchaseInvoice(unityApplication, payload);
                 results.Add(result);
@@ -266,6 +267,7 @@ public sealed class LogoObjectService
                     "LOGO_COMPANY_LOGIN_FAILED");
             }
 
+            AdjustPayloadCurrencyByCari(unityApplication, payload);
             ResolveUsdRateFromLogo(unityApplication, payload);
 
             var creationResult = TryCreatePurchaseInvoiceDataObject(unityApplication);
@@ -868,6 +870,71 @@ public sealed class LogoObjectService
         if (logoRate != null && logoRate.Value > 0)
         {
             payload.UsdRate = logoRate.Value;
+        }
+    }
+
+    private int? TryGetCariCurrencyType(object unityApplication, int firmNo, string arpCode)
+    {
+        try
+        {
+            string tableName = $"LG_{firmNo:D3}_CLCARD";
+            
+            dynamic query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+            query.Statement = $"SELECT CURRTYPE FROM {tableName} WHERE CODE = '{arpCode}'";
+            
+            bool openResult = (bool)query.GetType().InvokeMember("Open", BindingFlags.InvokeMethod, null, query, null);
+            if (openResult)
+            {
+                bool firstResult = (bool)query.GetType().InvokeMember("First", BindingFlags.InvokeMethod, null, query, null);
+                if (firstResult)
+                {
+                    dynamic fields = query.GetType().InvokeMember("Fields", BindingFlags.GetProperty, null, query, null);
+                    dynamic typeField = fields.GetType().InvokeMember("FieldByName", BindingFlags.InvokeMethod, null, fields, new object[] { "CURRTYPE" });
+                    object typeVal = typeField.GetType().InvokeMember("Value", BindingFlags.GetProperty, null, typeField, null);
+                    if (typeVal != null)
+                    {
+                        return Convert.ToInt32(typeVal);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                string logPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "currency_log.txt");
+                System.IO.File.AppendAllText(logPath, $"\n--- Cari Currency Query Error {DateTime.Now} ---\n{ex.Message}\n{ex.StackTrace}\n");
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    private void AdjustPayloadCurrencyByCari(object unityApplication, InvoicePayload payload)
+    {
+        if (payload == null || string.IsNullOrWhiteSpace(payload.ArpCode)) return;
+        
+        int? cariCurrencyType = TryGetCariCurrencyType(unityApplication, payload.FirmNo, payload.ArpCode);
+        if (cariCurrencyType == null) return;
+        
+        if (cariCurrencyType.Value == 0)
+        {
+            payload.TransactionCurrencyId = 0;
+            payload.TransactionCurrencyRate = 0;
+            payload.CurrencyCode = "TRY";
+            payload.ExchangeRate = 0;
+            
+            if (payload.Lines != null)
+            {
+                foreach (var line in payload.Lines)
+                {
+                    line.CurrencyId = 0;
+                    line.CurrencyRate = 0;
+                    line.CurrencyCode = "TRY";
+                    line.ExchangeRate = 0;
+                    line.ForeignCurrencyPrice = 0;
+                }
+            }
         }
     }
 
