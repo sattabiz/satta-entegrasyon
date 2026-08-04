@@ -880,7 +880,7 @@ public sealed class LogoObjectService
             string tableName = $"LG_{firmNo:D3}_CLCARD";
             
             dynamic query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
-            query.Statement = $"SELECT CURRTYPE FROM {tableName} WHERE CODE = '{arpCode}'";
+            query.Statement = $"SELECT CCURRENCY FROM {tableName} WHERE CODE = '{arpCode}'";
             
             bool openResult = (bool)query.GetType().InvokeMember("Open", BindingFlags.InvokeMethod, null, query, null);
             if (openResult)
@@ -889,7 +889,7 @@ public sealed class LogoObjectService
                 if (firstResult)
                 {
                     dynamic fields = query.GetType().InvokeMember("Fields", BindingFlags.GetProperty, null, query, null);
-                    dynamic typeField = fields.GetType().InvokeMember("FieldByName", BindingFlags.InvokeMethod, null, fields, new object[] { "CURRTYPE" });
+                    dynamic typeField = fields.GetType().InvokeMember("FieldByName", BindingFlags.InvokeMethod, null, fields, new object[] { "CCURRENCY" });
                     object typeVal = typeField.GetType().InvokeMember("Value", BindingFlags.GetProperty, null, typeField, null);
                     if (typeVal != null)
                     {
@@ -898,12 +898,30 @@ public sealed class LogoObjectService
                 }
             }
         }
-        catch (Exception ex)
+        catch
         {
             try
             {
-                string logPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "currency_log.txt");
-                System.IO.File.AppendAllText(logPath, $"\n--- Cari Currency Query Error {DateTime.Now} ---\n{ex.Message}\n{ex.StackTrace}\n");
+                string tableName = $"LG_{firmNo:D3}_CLCARD";
+                
+                dynamic query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+                query.Statement = $"SELECT CURRTYPE FROM {tableName} WHERE CODE = '{arpCode}'";
+                
+                bool openResult = (bool)query.GetType().InvokeMember("Open", BindingFlags.InvokeMethod, null, query, null);
+                if (openResult)
+                {
+                    bool firstResult = (bool)query.GetType().InvokeMember("First", BindingFlags.InvokeMethod, null, query, null);
+                    if (firstResult)
+                    {
+                        dynamic fields = query.GetType().InvokeMember("Fields", BindingFlags.GetProperty, null, query, null);
+                        dynamic typeField = fields.GetType().InvokeMember("FieldByName", BindingFlags.InvokeMethod, null, fields, new object[] { "CURRTYPE" });
+                        object typeVal = typeField.GetType().InvokeMember("Value", BindingFlags.GetProperty, null, typeField, null);
+                        if (typeVal != null)
+                        {
+                            return Convert.ToInt32(typeVal);
+                        }
+                    }
+                }
             }
             catch { }
         }
