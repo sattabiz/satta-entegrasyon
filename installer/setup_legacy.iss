@@ -1,6 +1,6 @@
 #define MyAppName "Satta Entegrasyon"
 #define MyAppExeName "SattaEntegrasyon_Legacy.exe"
-#define MyAppVersion "1.2.5"
+#define MyAppVersion "1.2.6"
 #define MyAppPublisher "Satta"
 #define MyAppDirName "SattaEntegrasyon-Legacy"
 #define MyOutputBaseFilename "SattaEntegrasyon-Setup-Legacy"

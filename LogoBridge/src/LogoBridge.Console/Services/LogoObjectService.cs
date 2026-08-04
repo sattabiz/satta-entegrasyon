@@ -47,6 +47,7 @@ public sealed class LogoObjectService
 
             foreach (var payload in payloads)
             {
+                ResolveUsdRateFromLogo(unityApplication, payload);
                 var result = TransferSinglePurchaseInvoice(unityApplication, payload);
                 results.Add(result);
             }
@@ -265,6 +266,8 @@ public sealed class LogoObjectService
                     "LOGO_COMPANY_LOGIN_FAILED");
             }
 
+            ResolveUsdRateFromLogo(unityApplication, payload);
+
             var creationResult = TryCreatePurchaseInvoiceDataObject(unityApplication);
             dataObject = creationResult.DataObject;
             if (dataObject is null)
@@ -424,7 +427,7 @@ public sealed class LogoObjectService
             if (!string.IsNullOrWhiteSpace(payload.DocumentNumber))
                 dataObject.DataFields.FieldByName("DOC_NUMBER").Value = payload.DocumentNumber;
                 
-            dataObject.DataFields.FieldByName("AUXIL_CODE").Value = ReadOptionalPayloadString(payload, "AuxiliaryCode", "AUTO");
+            dataObject.DataFields.FieldByName("AUXIL_CODE").Value = ReadOptionalPayloadString(payload, "AuxiliaryCode", "");
             
             var docDateStr = payload.DocumentDate?.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture) ?? string.Empty;
             dataObject.DataFields.FieldByName("DATE").Value = docDateStr;
@@ -814,6 +817,58 @@ public sealed class LogoObjectService
         }
 
         return null;
+    }
+
+    private decimal? TryGetLogoExchangeRate(object unityApplication, DateTime date, int currencyType)
+    {
+        try
+        {
+            string dateStr = date.ToString("yyyy-MM-dd");
+            
+            dynamic query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+            query.Statement = $"SELECT RATES1 FROM L_DAILYEXCHANGES WHERE EDATE = '{dateStr}' AND CURTYPE = {currencyType}";
+            
+            bool openResult = (bool)query.GetType().InvokeMember("Open", BindingFlags.InvokeMethod, null, query, null);
+            if (openResult)
+            {
+                bool firstResult = (bool)query.GetType().InvokeMember("First", BindingFlags.InvokeMethod, null, query, null);
+                if (firstResult)
+                {
+                    dynamic fields = query.GetType().InvokeMember("Fields", BindingFlags.GetProperty, null, query, null);
+                    dynamic rateField = fields.GetType().InvokeMember("FieldByName", BindingFlags.InvokeMethod, null, fields, new object[] { "RATES1" });
+                    object rateVal = rateField.GetType().InvokeMember("Value", BindingFlags.GetProperty, null, rateField, null);
+                    if (rateVal != null)
+                    {
+                        decimal rate = Convert.ToDecimal(rateVal);
+                        if (rate > 0)
+                        {
+                            return rate;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                string logPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "currency_log.txt");
+                System.IO.File.AppendAllText(logPath, $"\n--- Exch Rate Query Error {DateTime.Now} ---\n{ex.Message}\n{ex.StackTrace}\n");
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    private void ResolveUsdRateFromLogo(object unityApplication, InvoicePayload payload)
+    {
+        if (payload.DocumentDate == null) return;
+        
+        decimal? logoRate = TryGetLogoExchangeRate(unityApplication, payload.DocumentDate.Value, 1);
+        if (logoRate != null && logoRate.Value > 0)
+        {
+            payload.UsdRate = logoRate.Value;
+        }
     }
 
     private object CreateUnityApplication()

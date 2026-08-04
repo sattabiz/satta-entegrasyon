@@ -52,7 +52,7 @@ class LogoPayloadBuilder:
             "group_code": "1",
             "do_code": "~",
             "description": "",
-            "auxiliary_code": self._safe_text(invoice.get("reference_no")),
+            "auxiliary_code": "",
             "authorization_code": "",
             "trading_group": "",
             "division": self._to_int(self.logo_settings.get("division"), default=0),

@@ -1,6 +1,6 @@
 #define MyAppName "Satta Entegrasyon"
 #define MyAppExeName "SattaEntegrasyon.exe"
-#define MyAppVersion "1.2.5"
+#define MyAppVersion "1.2.6"
 #define MyAppPublisher "Satta"
 #define MyAppDirName "SattaEntegrasyon"
 #define MyOutputBaseFilename "SattaEntegrasyon-Setup"
