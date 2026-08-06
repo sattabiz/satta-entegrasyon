@@ -891,10 +891,12 @@ public sealed class LogoObjectService
                     dynamic fields = query.GetType().InvokeMember("Fields", BindingFlags.GetProperty, null, query, null);
                     dynamic typeField = fields.GetType().InvokeMember("FieldByName", BindingFlags.InvokeMethod, null, fields, new object[] { "CCURRENCY" });
                     object typeVal = typeField.GetType().InvokeMember("Value", BindingFlags.GetProperty, null, typeField, null);
-                    if (typeVal != null)
+                    
+                    if (typeVal == null || typeVal == DBNull.Value)
                     {
-                        return Convert.ToInt32(typeVal);
+                        return 0; // Null in Logo means default Yerel Para Birimi (TL)
                     }
+                    return Convert.ToInt32(typeVal);
                 }
             }
         }
@@ -916,10 +918,12 @@ public sealed class LogoObjectService
                         dynamic fields = query.GetType().InvokeMember("Fields", BindingFlags.GetProperty, null, query, null);
                         dynamic typeField = fields.GetType().InvokeMember("FieldByName", BindingFlags.InvokeMethod, null, fields, new object[] { "CURRTYPE" });
                         object typeVal = typeField.GetType().InvokeMember("Value", BindingFlags.GetProperty, null, typeField, null);
-                        if (typeVal != null)
+                        
+                        if (typeVal == null || typeVal == DBNull.Value)
                         {
-                            return Convert.ToInt32(typeVal);
+                            return 0; // Null in Logo means default Yerel Para Birimi (TL)
                         }
+                        return Convert.ToInt32(typeVal);
                     }
                 }
             }
