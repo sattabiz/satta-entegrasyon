@@ -102,7 +102,7 @@ class SettingsTab(QWidget):
         satta_login_form = QFormLayout(satta_login_frame)
 
         self.satta_base_url_input = QLineEdit()
-        self.satta_base_url_input.setPlaceholderText("https://test.satta.biz")
+        self.satta_base_url_input.setPlaceholderText("Satta URL adresi giriniz")
 
         self.satta_username_input = QLineEdit()
         self.satta_username_input.setPlaceholderText("Satta e-posta")
@@ -330,7 +330,6 @@ class SettingsTab(QWidget):
 
     def create_satta_config(self) -> SattaInvoiceConfig:
         return SattaInvoiceConfig(
-            use_mock_data=False,
             base_url=self.satta_base_url_input.text().strip(),
             username=self.satta_username_input.text().strip(),
             password=self.satta_password_input.text().strip(),

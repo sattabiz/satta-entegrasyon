@@ -18,10 +18,6 @@ def is_token_expired(token: str) -> bool:
     if not token:
         return True
 
-    # Mock tokens do not expire
-    if token.startswith("mock_token_"):
-        return False
-
     try:
         parts = token.split('.')
         if len(parts) != 3:
@@ -38,12 +34,9 @@ def is_token_expired(token: str) -> bool:
     return True
 
 
-## TODO: Dinamik buton adları hazırlanacak 
-
 @dataclass
 class SattaInvoiceConfig:
-    use_mock_data: bool = True
-    base_url: str = "https://test.satta.biz"
+    base_url: str = ""
     username: str = ""
     password: str = ""
     token: str = ""
@@ -77,13 +70,6 @@ class SattaInvoiceConnector:
         return invoice_rows, invoice_details, invoice_id_map, invoice_raw_map
 
     def get_categories(self) -> List[Dict[str, Any]]:
-        if self.config.use_mock_data:
-            return [
-                {"id": 609, "name": "AS01 - Strech Kategori", "category_erp_code": "AS01", "category_type": "item"},
-                {"id": 175, "name": "Hizmet Kategori", "category_erp_code": "HZ01", "category_type": "service"},
-                {"id": 111, "name": "Genel Malzeme", "category_erp_code": "GEN01", "category_type": "item"}
-            ]
-
         token = self.ensure_token()
         url = f"{self.config.base_url.rstrip('/')}/api/v1/list_categories"
         headers = self._build_auth_headers(token)
@@ -184,9 +170,6 @@ class SattaInvoiceConnector:
         self.config.token = ""
 
     def login_and_get_token(self) -> str:
-        if self.config.use_mock_data:
-            return self._mock_token_for_user()
-
         username = self._safe_text(self.config.username)
         password = self._safe_text(self.config.password)
 
@@ -242,9 +225,6 @@ class SattaInvoiceConnector:
         }
 
     def _read_invoice_response(self) -> Dict[str, Any]:
-        if self.config.use_mock_data:
-            return self._read_mock_response()
-
         request_payload = self.build_invoice_request()
         timeout_seconds = 30
 
@@ -287,117 +267,6 @@ class SattaInvoiceConnector:
             response_json["invoices"] = []
 
         return response_json
-
-    def _read_mock_response(self) -> Dict[str, Any]:
-        return {
-            "status": 200,
-            "response_message": "Müşteri faturaları başarıyla yüklendi.",
-            "request_id": "ca08c6fabc500b9a7be9197d89db9bcb",
-            "invoices": [
-                {
-                    "invoice_id": 710,
-                    "invoice_no": "ssj4332123",
-                    "order_id": None,
-                    "invoice_date": "2024-12-27T00:00:00.000+03:00",
-                    "payment_date": "2025-01-27T03:00:00.000+03:00",
-                    "payment_type": "",
-                    "state": "invoice_approved",
-                    "note": None,
-                    "dbs": False,
-                    "price_without_vat": 1050.0,
-                    "invoice_vat_total": 210.0,
-                    "total_tl_price": 1260.0,
-                    "payment_due_date_in_days": 30,
-                    "seller_name": "Üçmetal Çelik Sanayi Tic. Ltd. Şti",
-                    "seller_erp_id": "4343234234324",
-                    "currency_rates": {
-                        "USD": 35.2001,
-                        "EUR": 36.6794,
-                        "GBP": 44.1777,
-                    },
-                    "reference_no": None,
-                    "products": [
-                        {
-                            "line_index": None,
-                            "order_id": 1140,
-                            "order_po_no": None,
-                            "products_proposal_id": 8263,
-                            "name": "STRECH 17 mic. - 50 cm - 300 mt.",
-                            "category_id": 609,
-                            "category_erp_id": "AS01",
-                            "cost_center_name": "2 Kısa Elyaf",
-                            "cost_center_erp_id": "3",
-                            "description": "El TİPİ (MANUEL",
-                            "shipped_amount": 10.5,
-                            "unit": "KG",
-                            "price": 100.0,
-                            "price_in_tl": 100.0,
-                            "line_total_without_tax": 1050.0,
-                            "line_total_with_tax": 1260.0,
-                            "line_tax_total": 210.0,
-                            "applied_vat_rate": 20,
-                            "currency_code": "TRY",
-                            "erp_id": None,
-                            "company_product_erp_code": "AS01002",
-                            "company_product_erp_id": "51997",
-                            "product_erp_id": None,
-                            "proposal_note": None,
-                        }
-                    ],
-                },
-                {
-                    "invoice_id": 536,
-                    "invoice_no": "132",
-                    "order_id": None,
-                    "invoice_date": "2024-02-20T00:00:00.000+03:00",
-                    "payment_date": None,
-                    "payment_type": "",
-                    "state": "invoice_approved",
-                    "note": None,
-                    "dbs": False,
-                    "price_without_vat": 12.0,
-                    "invoice_vat_total": 2.4,
-                    "total_tl_price": 14.4,
-                    "payment_due_date_in_days": 30,
-                    "seller_name": "Tedarik Test",
-                    "seller_erp_id": "tedarik_erp",
-                    "currency_rates": {
-                        "USD": 30.8944,
-                        "EUR": 33.3239,
-                        "GBP": 38.9773,
-                    },
-                    "reference_no": None,
-                    "products": [
-                        {
-                            "line_index": None,
-                            "order_id": 645,
-                            "order_po_no": None,
-                            "products_proposal_id": 5821,
-                            "name": "sdf",
-                            "category_id": 175,
-                            "category_erp_id": None,
-                            "cost_center_name": None,
-                            "cost_center_erp_id": None,
-                            "description": None,
-                            "shipped_amount": 1.0,
-                            "unit": "ADET",
-                            "price": 12.0,
-                            "price_in_tl": 12.0,
-                            "line_total_without_tax": 12.0,
-                            "line_total_with_tax": 14.4,
-                            "line_tax_total": 2.4,
-                            "applied_vat_rate": 20,
-                            "currency_code": "TRY",
-                            "erp_id": None,
-                            "company_product_erp_code": None,
-                            "company_product_erp_id": None,
-                            "product_erp_id": None,
-                            "proposal_note": None,
-                        }
-                    ],
-                },
-            ],
-        }
 
     def _map_invoice_row(self, invoice: Dict[str, Any]) -> InvoiceUiRow:
         invoice_no = self._safe_text(invoice.get("invoice_no"), "-")
@@ -487,10 +356,6 @@ class SattaInvoiceConnector:
     def _normalized_username(self) -> str:
         username = self._safe_text(self.config.username).lower()
         return username or "default_user"
-
-    def _mock_token_for_user(self) -> str:
-        username = self._normalized_username().replace("@", "_").replace(".", "_")
-        return f"mock_token_{username}"
 
     def _normalize_invoice_id(self, value: Any) -> Optional[int]:
         try:

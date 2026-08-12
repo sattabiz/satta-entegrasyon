@@ -17,7 +17,7 @@ class SattaCostCenterConnector:
 
     def __init__(self):
         self.settings = self._load_settings()
-        self.base_url = self._safe_text(self.settings.get("base_url"), "https://test.satta.biz")
+        self.base_url = self._safe_text(self.settings.get("base_url"))
         self.username = self._safe_text(self.settings.get("username"))
         self.token = self._resolve_token()
 

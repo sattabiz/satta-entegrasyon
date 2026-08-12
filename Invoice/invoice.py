@@ -188,8 +188,7 @@ class InvoiceTransferTab(QWidget):
 
         connector = SattaInvoiceConnector(
             SattaInvoiceConfig(
-                use_mock_data=False,
-                base_url=satta_settings.get("base_url", "https://test.satta.biz"),
+                base_url=satta_settings.get("base_url", ""),
                 username=satta_settings.get("username", ""),
                 password=satta_settings.get("password", ""),
                 token=satta_settings.get("token", ""),
@@ -202,8 +201,7 @@ class InvoiceTransferTab(QWidget):
 
         connector = SattaInvoiceConnector(
             SattaInvoiceConfig(
-                use_mock_data=False,
-                base_url=satta_settings.get("base_url", "https://test.satta.biz"),
+                base_url=satta_settings.get("base_url", ""),
                 username=satta_settings.get("username", ""),
                 password=satta_settings.get("password", ""),
                 token=satta_settings.get("token", ""),
