@@ -156,7 +156,6 @@ class StockTab(QWidget):
                 password=logo_settings.get("password", ""),
                 firm_no=logo_settings.get("firm_no", 1),
                 period_no=logo_settings.get("period_no", 1),
-                use_mock_data=False,
             )
             reader = ProductReader(config)
             headers, products = reader.read_products()

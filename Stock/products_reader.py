@@ -13,7 +13,6 @@ class ProductReaderConfig:
     password: str = ""
     firm_no: int = 1
     period_no: int = 1
-    use_mock_data: bool = False
 
     def __post_init__(self):
         self.server = str(self.server).strip()

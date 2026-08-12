@@ -13,7 +13,6 @@ class LogoConnectionConfig:
     password: str = ""
     firm_no: int = 1
     period_no: int = 1
-    use_mock_data: bool = True
 
 
 class LogoConnector:
@@ -25,54 +24,7 @@ class LogoConnector:
         return [self._map_supplier_row_for_ui(row) for row in raw_rows]
 
     def _read_supplier_rows(self) -> Sequence[dict]:
-        if self.config.use_mock_data:
-            return self._read_mock_supplier_rows()
-
         return self._read_suppliers_from_sql()
-
-    def _read_mock_supplier_rows(self) -> Sequence[dict]:
-        return [
-            {
-                "supplier_code": "SUP001",
-                "supplier_name": "Örnek Tedarikçi A.Ş.",
-                "contact_name": "Ahmet Yılmaz",
-                "phone_number": "553234567",
-                "email": "ahmet@example.com",
-                "tax_number": "1234567890",
-            },
-            {
-                "supplier_code": "SUP002",
-                "supplier_name": "Deneme Tedarikçi Ltd.",
-                "contact_name": "Ayşe Demir",
-                "phone_number": "5553987654",
-                "email": "",
-                "tax_number": "0987654321",
-            },
-            {
-                "supplier_code": "SUP003",
-                "supplier_name": "Atlas Tedarik",
-                "contact_name": "Mehmet Kaya",
-                "phone_number": "5553123456",
-                "email": "mehmet@example.com",
-                "tax_number": "",
-            },
-            {
-                "supplier_code": "SUP004",
-                "supplier_name": "Beta Endüstri",
-                "contact_name": "Zeynep Arslan",
-                "phone_number": "5535654321",
-                "email": "zeynep@example.com",
-                "tax_number": "5544332211",
-            },
-            {
-                "supplier_code": "SUP005",
-                "supplier_name": "Deneme Tedarik",
-                "contact_name": "Mehmet Kaya",
-                "phone_number": "5553987654",
-                "email": "mehmet@example.com",
-                "tax_number": "",
-            },
-        ]
 
     def _read_suppliers_from_sql(self) -> Sequence[dict]:
         raise NotImplementedError(

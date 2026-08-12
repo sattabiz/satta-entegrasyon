@@ -144,6 +144,9 @@ class LogoPayloadBuilder:
         return lines
 
     def _resolve_product_code(self, product: Dict[str, Any]) -> str:
+        if product.get("category_manually_changed"):
+            return self._safe_text(product.get("category_erp_code"))
+
         product_code = self._safe_text(product.get("company_product_erp_id"))
         
         # İstek: Eğer kod "SAT-" ile başlıyorsa veya boşsa (null ise), öncelikli olarak category_erp_code kullan
