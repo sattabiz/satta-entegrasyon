@@ -76,6 +76,61 @@ class SattaInvoiceConnector:
 
         return invoice_rows, invoice_details, invoice_id_map, invoice_raw_map
 
+    def get_categories(self) -> List[Dict[str, Any]]:
+        if self.config.use_mock_data:
+            return [
+                {"id": 609, "name": "AS01 - Strech Kategori", "category_erp_code": "AS01", "category_type": "item"},
+                {"id": 175, "name": "Hizmet Kategori", "category_erp_code": "HZ01", "category_type": "service"},
+                {"id": 111, "name": "Genel Malzeme", "category_erp_code": "GEN01", "category_type": "item"}
+            ]
+
+        token = self.ensure_token()
+        url = f"{self.config.base_url.rstrip('/')}/api/v1/list_categories"
+        headers = self._build_auth_headers(token)
+
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Satta kategori isteği başarısız oldu: {exc}") from exc
+
+        response_json = self._safe_json(response)
+        if not response.ok:
+            message = self._extract_error_message(response_json)
+            if not message:
+                message = response.text.strip()
+            raise RuntimeError(
+                f"Satta kategorileri alınamadı. HTTP {response.status_code}. {message}"
+            )
+
+        items = response_json.get("categories")
+        if not isinstance(items, list):
+            items = []
+
+        categories = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            name = ""
+            for key in ["name", "title", "label", "category_name"]:
+                val = str(item.get(key, "")).strip()
+                if val:
+                    name = val
+                    break
+
+            erp_code = str(item.get("category_erp_code") or item.get("category_erp_id") or item.get("erp_code") or "").strip()
+            category_id = item.get("id")
+            category_type = str(item.get("category_type", "")).strip()
+
+            categories.append({
+                "id": category_id,
+                "name": name,
+                "category_erp_code": erp_code,
+                "category_type": category_type
+            })
+
+        return categories
+
     def ensure_token(self, force_refresh: bool = False) -> str:
         if not force_refresh:
             current_token = self.get_saved_token()

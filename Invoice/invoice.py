@@ -108,18 +108,30 @@ class InvoiceTransferTab(QWidget):
         detail_layout = QVBoxLayout(self.detail_container)
         detail_layout.setContentsMargins(0, 0, 0, 0)
 
+        detail_title_row = QHBoxLayout()
         self.detail_title_label = QLabel("Seçili fatura kalemleri")
-        detail_layout.addWidget(self.detail_title_label)
+        self.edit_detail_row_button = QPushButton("Seçili Kalemi Düzenle")
+        self.edit_detail_row_button.setMinimumHeight(28)
+        self.edit_detail_row_button.clicked.connect(self.enable_detail_row_editing)
+        detail_title_row.addWidget(self.detail_title_label)
+        detail_title_row.addStretch()
+        detail_title_row.addWidget(self.edit_detail_row_button)
+        detail_layout.addLayout(detail_title_row)
 
-        self.detail_table = QTableWidget(0, 6)
+        self.detail_table = QTableWidget(0, 9)
         self.detail_table.setHorizontalHeaderLabels([
+            "Seç",
             "Ürün Kodu",
             "Ürün Bilgisi",
             "Açıklama",
             "Miktar",
             "Birim",
             "Birim Fiyat",
+            "Kategori",
+            "Kategori ERP Kodu",
         ])
+        self.detail_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.detail_table.setColumnWidth(0, 36)
         detail_layout.addWidget(self.detail_table)
         self.detail_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.detail_container.setVisible(True)
@@ -133,6 +145,7 @@ class InvoiceTransferTab(QWidget):
 
         root_layout.addLayout(status_info_layout)
 
+        self.satta_categories = []
         self.all_invoices = []
         self.invoice_details = {}
         self.invoice_id_map = {}
@@ -178,6 +191,24 @@ class InvoiceTransferTab(QWidget):
             )
         )
         return connector.get_invoices_for_ui()
+
+    def fetch_categories(self):
+        satta_settings = self.load_satta_settings()
+
+        connector = SattaInvoiceConnector(
+            SattaInvoiceConfig(
+                use_mock_data=False,
+                base_url=satta_settings.get("base_url", "https://test.satta.biz"),
+                username=satta_settings.get("username", ""),
+                password=satta_settings.get("password", ""),
+                token=satta_settings.get("token", ""),
+            )
+        )
+        try:
+            return connector.get_categories()
+        except Exception as exc:
+            print(f"Kategoriler yüklenemedi: {exc}")
+            return []
 
     def load_satta_settings(self):
         if not SETTINGS_FILE.exists():
@@ -415,6 +446,7 @@ class InvoiceTransferTab(QWidget):
 
     def load_invoices(self):
         try:
+            self.satta_categories = self.fetch_categories()
             invoice_rows, invoice_details, invoice_id_map, invoice_raw_map = self.fetch_invoices()
             self.apply_invoice_data(invoice_rows, invoice_details, invoice_id_map, invoice_raw_map)
         except Exception as exc:
@@ -536,6 +568,49 @@ class InvoiceTransferTab(QWidget):
                     continue
                 item.setFlags(item.flags() | Qt.ItemIsEditable)
 
+        # Enable category dropdowns for currently displayed detail table if it belongs to an edited invoice
+        current_invoice_row = self.invoice_table.currentRow()
+        if current_invoice_row in selected_rows:
+            for row in range(self.detail_table.rowCount()):
+                combo = self.detail_table.cellWidget(row, 7)
+                if isinstance(combo, QComboBox):
+                    combo.setEnabled(True)
+
+    def enable_detail_row_editing(self):
+        current_invoice_row = self.invoice_table.currentRow()
+        if current_invoice_row < 0:
+            QMessageBox.warning(self, "Fatura Seçilmedi", "Önce fatura listesinden düzenlemek istediğiniz faturayı seçin.")
+            return
+
+        # Find which detail rows are checked in column 0
+        checked_rows = []
+        for row in range(self.detail_table.rowCount()):
+            item = self.detail_table.item(row, 0)
+            if item is not None and item.checkState() == Qt.Checked:
+                checked_rows.append(row)
+
+        if not checked_rows:
+            QMessageBox.warning(
+                self, 
+                "Kalem Seçilmedi", 
+                "Önce detay tablosundan düzenlemek istediğiniz kalemi (satırı) sol taraftaki kutucuktan seçin."
+            )
+            return
+
+        invoice_no_item = self.invoice_table.item(current_invoice_row, 1)
+        invoice_id = invoice_no_item.data(Qt.UserRole) if invoice_no_item is not None else None
+        if invoice_id is None:
+            invoice_no = invoice_no_item.text().strip() if invoice_no_item else ""
+            invoice_id = self.invoice_id_map.get(invoice_no)
+
+        if invoice_id is not None:
+            self.editable_invoice_ids.add(invoice_id)
+
+        for row in checked_rows:
+            combo = self.detail_table.cellWidget(row, 7)
+            if isinstance(combo, QComboBox):
+                combo.setEnabled(True)
+
     def handle_table_item_changed(self, item):
         if item is None:
             return
@@ -572,21 +647,124 @@ class InvoiceTransferTab(QWidget):
         self.update_selected_count()
 
     def populate_detail_table(self, invoice_no):
-        details = self.invoice_details.get(invoice_no, [])
         self.detail_table.setRowCount(0)
+        invoice_id = self.invoice_id_map.get(invoice_no)
+        raw_invoice = self.invoice_raw_map.get(invoice_id) if invoice_id is not None else None
+        
+        if not raw_invoice or not isinstance(raw_invoice, dict):
+            details = self.invoice_details.get(invoice_no, [])
+            for row_data in details:
+                row_index = self.detail_table.rowCount()
+                self.detail_table.insertRow(row_index)
+                
+                # Checkbox at column 0
+                select_item = QTableWidgetItem()
+                select_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                select_item.setCheckState(Qt.Unchecked)
+                select_item.setText("")
+                self.detail_table.setItem(row_index, 0, select_item)
 
-        for row_data in details:
-            row_index = self.detail_table.rowCount()
-            self.detail_table.insertRow(row_index)
-            for col_index, value in enumerate(row_data):
-                item = QTableWidgetItem(value)
-                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                self.detail_table.setItem(row_index, col_index, item)
+                for col_index, value in enumerate(row_data, start=1):
+                    item = QTableWidgetItem(value)
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    self.detail_table.setItem(row_index, col_index, item)
+            self.detail_title_label.setText(f"Seçili fatura kalemleri: {invoice_no} (Detaylar sınırlı)")
+            return
 
-        if details:
-            self.detail_title_label.setText(f"Seçili fatura kalemleri: {invoice_no}")
-        else:
-            self.detail_title_label.setText(f"Seçili fatura kalemleri: {invoice_no} için detay bulunamadı")
+        products = raw_invoice.get("products") or []
+        self.detail_title_label.setText(f"Seçili fatura kalemleri: {invoice_no}")
+
+        self.detail_table.blockSignals(True)
+        try:
+            for p_idx, product in enumerate(products):
+                if not isinstance(product, dict):
+                    continue
+
+                product_code = self._safe_text(product.get("company_product_erp_code"))
+                if not product_code:
+                    product_code = self._safe_text(product.get("product_erp_id"))
+                if not product_code:
+                    product_code = self._safe_text(product.get("products_proposal_id"), "-")
+
+                product_name = self._safe_text(product.get("name"), "-")
+                description = self._safe_text(product.get("description"))
+                if not description:
+                    description = self._safe_text(product.get("proposal_note"))
+                if not description:
+                    description = "-"
+
+                unit = self._safe_text(product.get("unit"), "-")
+                shipped_amount = self._format_quantity(product.get("shipped_amount"))
+                price = self._format_money(product.get("price"))
+
+                row_index = self.detail_table.rowCount()
+                self.detail_table.insertRow(row_index)
+
+                # Checkbox at column 0
+                select_item = QTableWidgetItem()
+                select_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                select_item.setCheckState(Qt.Unchecked)
+                select_item.setText("")
+                self.detail_table.setItem(row_index, 0, select_item)
+
+                # Product info in columns 1 to 6
+                cols = [product_code, product_name, description, shipped_amount, unit, price]
+                for col_index, val in enumerate(cols, start=1):
+                    item = QTableWidgetItem(val)
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    self.detail_table.setItem(row_index, col_index, item)
+
+                # Column 7: Category (QComboBox)
+                category_combo = QComboBox()
+                category_combo.setMinimumHeight(28)
+                category_combo.addItem("Seçiniz...", None)
+                
+                curr_cat_id = product.get("category_id")
+                curr_cat_erp_code = product.get("category_erp_code")
+                curr_cat_erp_id = product.get("category_erp_id")
+                
+                selected_idx = 0
+                for cat_idx, cat in enumerate(self.satta_categories, start=1):
+                    cat_name = cat.get('name')
+                    category_combo.addItem(cat_name, cat)
+                    
+                    is_match = False
+                    if curr_cat_id is not None and cat.get("id") == curr_cat_id:
+                        is_match = True
+                    elif curr_cat_erp_code and cat.get("category_erp_code") == curr_cat_erp_code:
+                        is_match = True
+                    elif curr_cat_erp_id and cat.get("category_erp_code") == curr_cat_erp_id:
+                        is_match = True
+                        
+                    if is_match:
+                        selected_idx = cat_idx
+
+                category_combo.setCurrentIndex(selected_idx)
+                
+                is_editable = (invoice_id in self.editable_invoice_ids)
+                category_combo.setEnabled(is_editable)
+
+                # Connect lambda with parameters to ensure we identify the changed line correctly
+                category_combo.currentIndexChanged.connect(
+                    lambda idx, inv_id=invoice_id, p_idx=p_idx, combo=category_combo: 
+                    self.handle_line_category_changed(inv_id, p_idx, combo)
+                )
+
+                self.detail_table.setCellWidget(row_index, 7, category_combo)
+
+                # Column 8: Category ERP Code
+                current_erp_code = ""
+                if selected_idx > 0:
+                    current_erp_code = self.satta_categories[selected_idx - 1].get("category_erp_code", "")
+                else:
+                    current_erp_code = curr_cat_erp_code or curr_cat_erp_id or ""
+
+                erp_item = QTableWidgetItem(str(current_erp_code))
+                erp_item.setFlags(erp_item.flags() & ~Qt.ItemIsEditable)
+                self.detail_table.setItem(row_index, 8, erp_item)
+
+        finally:
+            self.detail_table.blockSignals(False)
 
     def load_selected_invoice_details(self):
         current_row = self.invoice_table.currentRow()
@@ -869,3 +1047,79 @@ class InvoiceTransferTab(QWidget):
         self.load_cached_warehouses()
         self.select_saved_warehouse()
         self.warehouse_dropdown.currentIndexChanged.connect(self.save_selected_warehouse)
+
+    def handle_line_category_changed(self, invoice_id, product_index, combo_widget):
+        cat_data = combo_widget.currentData()
+        
+        # 1. Update the row cells in detail_table
+        target_row = -1
+        for row in range(self.detail_table.rowCount()):
+            if self.detail_table.cellWidget(row, 7) == combo_widget:
+                target_row = row
+                break
+
+        if target_row == -1:
+            return
+
+        new_erp_code = ""
+        new_category_id = None
+        new_category_type = "item"
+
+        if isinstance(cat_data, dict):
+            new_erp_code = str(cat_data.get("category_erp_code", "")).strip()
+            new_category_id = cat_data.get("id")
+            new_category_type = str(cat_data.get("category_type", "item")).strip()
+
+        # Update ERP code cell text (read-only) in column 8
+        erp_item = self.detail_table.item(target_row, 8)
+        if erp_item:
+            erp_item.setText(new_erp_code)
+
+        # 2. Update the cache: self.invoice_raw_map
+        raw_invoice = self.invoice_raw_map.get(invoice_id)
+        if not raw_invoice or not isinstance(raw_invoice, dict):
+            return
+
+        products = raw_invoice.get("products") or []
+        if product_index < 0 or product_index >= len(products):
+            return
+
+        product = products[product_index]
+        if not isinstance(product, dict):
+            return
+
+        # Update category mapping fields in the raw data
+        product["category_id"] = new_category_id
+        product["category_erp_id"] = new_erp_code
+        product["category_erp_code"] = new_erp_code
+        product["category_type"] = new_category_type
+        product["category_manually_changed"] = True
+
+    def _format_money(self, value):
+        if value is None:
+            return "0.00"
+        amount = self._to_float(value)
+        return f"{amount:.2f}"
+
+    def _format_quantity(self, value):
+        if value is None:
+            return "0"
+        amount = self._to_float(value)
+        return f"{amount:.2f}".rstrip("0").rstrip(".")
+
+    def _to_float(self, value):
+        try:
+            if value is None:
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _safe_text(value, default=""):
+        if value is None:
+            return default
+        text = str(value).strip()
+        if not text:
+            return default
+        return text
