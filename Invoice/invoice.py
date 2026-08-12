@@ -18,6 +18,10 @@ from Common.qt_compat import (
 )
 from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector, is_token_expired
 from Invoice.push_invoice import SattaInvoicePushConnector
+try:
+    from PySide6.QtGui import QColor
+except ImportError:
+    from PySide2.QtGui import QColor
 from Invoice.logo_transfer_service import LogoTransferService
 
 SETTINGS_FILE = user_data_path("app_settings.json")
@@ -157,6 +161,7 @@ class InvoiceTransferTab(QWidget):
         self.invoice_table.itemSelectionChanged.connect(self.load_selected_invoice_details)
         self.invoice_table.itemSelectionChanged.connect(self.update_edit_button_text)
         self.invoice_table.itemChanged.connect(self.handle_table_item_changed)
+        self.detail_table.itemChanged.connect(self.handle_detail_item_changed)
         self.update_edit_button_text()
 
         self.load_cached_warehouses()
@@ -571,10 +576,19 @@ class InvoiceTransferTab(QWidget):
         # Enable category dropdowns for currently displayed detail table if it belongs to an edited invoice
         current_invoice_row = self.invoice_table.currentRow()
         if current_invoice_row in selected_rows:
+            self.detail_table.setEditTriggers(
+                QAbstractItemView.DoubleClicked
+                | QAbstractItemView.EditKeyPressed
+                | QAbstractItemView.SelectedClicked
+            )
             for row in range(self.detail_table.rowCount()):
                 combo = self.detail_table.cellWidget(row, 7)
                 if isinstance(combo, QComboBox):
                     combo.setEnabled(True)
+                unit_item = self.detail_table.item(row, 5)
+                if unit_item:
+                    unit_item.setFlags(unit_item.flags() | Qt.ItemIsEditable)
+                    unit_item.setBackground(QColor("#fffbe6"))
 
     def enable_detail_row_editing(self):
         current_invoice_row = self.invoice_table.currentRow()
@@ -606,10 +620,20 @@ class InvoiceTransferTab(QWidget):
         if invoice_id is not None:
             self.editable_invoice_ids.add(invoice_id)
 
+        self.detail_table.setEditTriggers(
+            QAbstractItemView.DoubleClicked
+            | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.SelectedClicked
+        )
+
         for row in checked_rows:
             combo = self.detail_table.cellWidget(row, 7)
             if isinstance(combo, QComboBox):
                 combo.setEnabled(True)
+            unit_item = self.detail_table.item(row, 5)
+            if unit_item:
+                unit_item.setFlags(unit_item.flags() | Qt.ItemIsEditable)
+                unit_item.setBackground(QColor("#fffbe6"))
 
     def handle_table_item_changed(self, item):
         if item is None:
@@ -1094,6 +1118,40 @@ class InvoiceTransferTab(QWidget):
         product["category_erp_code"] = new_erp_code
         product["category_type"] = new_category_type
         product["category_manually_changed"] = True
+
+    def handle_detail_item_changed(self, item):
+        if item is None:
+            return
+
+        # Check if the edited column is "Birim" (column 5)
+        if item.column() != 5:
+            return
+
+        current_invoice_row = self.invoice_table.currentRow()
+        if current_invoice_row < 0:
+            return
+
+        invoice_no_item = self.invoice_table.item(current_invoice_row, 1)
+        if not invoice_no_item:
+            return
+
+        invoice_no = invoice_no_item.text().strip()
+        invoice_id = self.invoice_id_map.get(invoice_no)
+        if invoice_id is None:
+            return
+
+        raw_invoice = self.invoice_raw_map.get(invoice_id)
+        if not raw_invoice or not isinstance(raw_invoice, dict):
+            return
+
+        products = raw_invoice.get("products") or []
+        product_index = item.row()
+        if product_index < 0 or product_index >= len(products):
+            return
+
+        product = products[product_index]
+        if isinstance(product, dict):
+            product["unit"] = item.text().strip()
 
     def _format_money(self, value):
         if value is None:
