@@ -441,6 +441,7 @@ class InvoiceTransferTab(QWidget):
         self.invoice_table.itemChanged.connect(self.handle_table_item_changed)
         self.update_status_summary()
         self.update_edit_button_text()
+        self.load_button.setText("Faturaları Yenile")
 
         if self.invoice_table.rowCount() > 0:
             self.invoice_table.selectRow(0)
