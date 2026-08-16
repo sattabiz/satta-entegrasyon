@@ -23,6 +23,7 @@ try:
 except ImportError:
     from PySide2.QtGui import QColor
 from Invoice.logo_transfer_service import LogoTransferService
+from Common.table_utils import enable_table_copy
 from Common.searchable_combo import SearchableComboBox
 
 SETTINGS_FILE = user_data_path("app_settings.json")
@@ -104,6 +105,7 @@ class InvoiceTransferTab(QWidget):
         self.invoice_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.invoice_table.setColumnWidth(0, 36)
         self.invoice_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        enable_table_copy(self.invoice_table)
         root_layout.addWidget(self.invoice_table)
 
         self.detail_container = QWidget()
@@ -133,6 +135,7 @@ class InvoiceTransferTab(QWidget):
             "Kategori",
             "Kategori ERP Kodu",
         ])
+        enable_table_copy(self.detail_table)
         self.detail_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.detail_table.setColumnWidth(0, 36)
         detail_layout.addWidget(self.detail_table)
@@ -141,9 +144,7 @@ class InvoiceTransferTab(QWidget):
         root_layout.addWidget(self.detail_container)
 
         status_info_layout = QHBoxLayout()
-
-        self.selected_info_label = QLabel("Seçili fatura sayısı: 0")
-
+        self.selected_info_label = QLabel("Seçili fatura sayısı: 0 | Toplam tutar: 0.00 TL")
         status_info_layout.addWidget(self.selected_info_label)
 
         root_layout.addLayout(status_info_layout)
@@ -701,50 +702,87 @@ class InvoiceTransferTab(QWidget):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     self.detail_table.setItem(row_index, col_index, item)
 
+                # Extract candidate ERP codes from product
+                candidate_erp_codes = []
+                for key in ["category_erp_code", "category_erp_id", "company_product_erp_id", "company_product_erp_code", "product_erp_id"]:
+                    val = self._safe_text(product.get(key))
+                    if val and val != "-" and val not in candidate_erp_codes:
+                        candidate_erp_codes.append(val)
+
+                cat_dict = product.get("category")
+                prod_cat_id = product.get("category_id")
+                if isinstance(cat_dict, dict):
+                    if prod_cat_id is None:
+                        prod_cat_id = cat_dict.get("id")
+                    for key in ["category_erp_code", "erp_code", "category_erp_id", "company_product_erp_id"]:
+                        val = self._safe_text(cat_dict.get(key))
+                        if val and val != "-" and val not in candidate_erp_codes:
+                            candidate_erp_codes.append(val)
+
+                curr_cat_name = self._extract_product_category_name(product)
+
                 # Column 8: Category (SearchableComboBox)
                 category_combo = SearchableComboBox(placeholder_text="Kategori Ara...")
                 category_combo.setMinimumHeight(28)
                 category_combo.addItem("Seçiniz...", None)
                 
-                curr_cat_id = product.get("category_id")
-                curr_cat_erp_code = product.get("category_erp_code")
-                curr_cat_erp_id = product.get("category_erp_id")
-                
                 selected_idx = 0
                 for cat_idx, cat in enumerate(self.satta_categories, start=1):
-                    cat_name = cat.get('name')
+                    cat_name = self._safe_text(cat.get('name'))
+                    cat_id = cat.get("id")
+                    cat_erp = self._safe_text(cat.get("category_erp_code"))
                     category_combo.addItem(cat_name, cat)
                     
                     is_match = False
-                    if curr_cat_id is not None and cat.get("id") == curr_cat_id:
+                    if prod_cat_id is not None and cat_id is not None and str(cat_id).strip() == str(prod_cat_id).strip():
                         is_match = True
-                    elif curr_cat_erp_code and cat.get("category_erp_code") == curr_cat_erp_code:
-                        is_match = True
-                    elif curr_cat_erp_id and cat.get("category_erp_code") == curr_cat_erp_id:
+                    elif cat_erp:
+                        for cand in candidate_erp_codes:
+                            if cand.lower() == cat_erp.lower():
+                                is_match = True
+                                break
+                    if not is_match and curr_cat_name and cat_name and cat_name.lower() == curr_cat_name.lower():
                         is_match = True
                         
-                    if is_match:
+                    if is_match and selected_idx == 0:
                         selected_idx = cat_idx
 
-                category_combo.setCurrentIndex(selected_idx)
-                
+                if selected_idx == 0:
+                    disp_name = curr_cat_name if curr_cat_name else (candidate_erp_codes[0] if candidate_erp_codes else "")
+                    if disp_name:
+                        disp_erp = candidate_erp_codes[0] if candidate_erp_codes else ""
+                        custom_cat = {
+                            "id": prod_cat_id,
+                            "name": disp_name,
+                            "category_erp_code": disp_erp,
+                            "category_type": str(product.get("category_type", "item")).strip()
+                        }
+                        category_combo.addItem(disp_name, custom_cat)
+                        selected_idx = category_combo.count() - 1
+
                 is_editable = (invoice_id in self.editable_invoice_ids)
                 category_combo.setEnabled(is_editable)
 
-                # Connect lambda with parameters to ensure we identify the changed line correctly
+                self.detail_table.setCellWidget(row_index, 8, category_combo)
+
+                category_combo.blockSignals(True)
+                category_combo.setCurrentIndex(selected_idx)
+                category_combo.blockSignals(False)
+
+                # Connect lambda AFTER setCellWidget and setCurrentIndex
                 category_combo.currentIndexChanged.connect(
                     lambda idx, inv_id=invoice_id, p_idx=p_idx, combo=category_combo: 
                     self.handle_line_category_changed(inv_id, p_idx, combo)
                 )
 
-                self.detail_table.setCellWidget(row_index, 8, category_combo)
-
                 # Column 9: Category ERP Code
                 current_erp_code = ""
                 if selected_idx > 0:
-                    current_erp_code = self.satta_categories[selected_idx - 1].get("category_erp_code", "")
-                else:
-                    current_erp_code = curr_cat_erp_code or curr_cat_erp_id or ""
+                    combo_cat_data = category_combo.itemData(selected_idx)
+                    if isinstance(combo_cat_data, dict):
+                        current_erp_code = combo_cat_data.get("category_erp_code", "")
+                if not current_erp_code:
+                    current_erp_code = candidate_erp_codes[0] if candidate_erp_codes else ""
 
                 erp_item = QTableWidgetItem(str(current_erp_code))
                 erp_item.setFlags(erp_item.flags() & ~Qt.ItemIsEditable)
@@ -1167,6 +1205,22 @@ class InvoiceTransferTab(QWidget):
                 return str(cost_center_inv).strip()
 
         return "-"
+
+    def _extract_product_category_name(self, product: dict) -> str:
+        if not isinstance(product, dict):
+            return ""
+        val = self._safe_text(product.get("category_name"))
+        if val:
+            return val
+        cat_field = product.get("category")
+        if isinstance(cat_field, dict):
+            for key in ["name", "title", "label", "category_name"]:
+                res = self._safe_text(cat_field.get(key))
+                if res:
+                    return res
+        elif isinstance(cat_field, str):
+            return self._safe_text(cat_field)
+        return ""
 
     @staticmethod
     def _safe_text(value, default=""):

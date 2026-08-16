@@ -117,7 +117,7 @@ class LogoPayloadBuilder:
                 "description": self._build_line_description(product),
                 "description2": self._safe_text(product.get("description")),
                 "quantity": quantity,
-                "unit_code": self._safe_text(product.get("unit"), default="ADET"),
+                "unit_code": self._safe_text(product.get("unit")),
                 "unit_price": unit_price,
                 "foreign_currency_price": foreign_price,
                 "vat_rate": vat_rate,
