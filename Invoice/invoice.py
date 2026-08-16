@@ -23,6 +23,7 @@ try:
 except ImportError:
     from PySide2.QtGui import QColor
 from Invoice.logo_transfer_service import LogoTransferService
+from Common.searchable_combo import SearchableComboBox
 
 SETTINGS_FILE = user_data_path("app_settings.json")
 
@@ -739,8 +740,8 @@ class InvoiceTransferTab(QWidget):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     self.detail_table.setItem(row_index, col_index, item)
 
-                # Column 8: Category (QComboBox)
-                category_combo = QComboBox()
+                # Column 8: Category (SearchableComboBox)
+                category_combo = SearchableComboBox(placeholder_text="Kategori Ara...")
                 category_combo.setMinimumHeight(28)
                 category_combo.addItem("Seçiniz...", None)
                 
