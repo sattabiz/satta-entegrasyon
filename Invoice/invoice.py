@@ -80,13 +80,10 @@ class InvoiceTransferTab(QWidget):
         button_layout = QHBoxLayout()
         self.load_button = QPushButton("Faturaları Satta'dan Al")
         self.transfer_button = QPushButton(f"Faturaları {connector_display_name}'a Aktar")
-        self.edit_selected_button = QPushButton("Seçili Satırları Düzenle")
         self.load_button.clicked.connect(self.load_invoices)
         self.transfer_button.clicked.connect(self.transfer_selected_invoices)
-        self.edit_selected_button.clicked.connect(self.enable_selected_rows_editing)
         button_layout.addWidget(self.load_button)
         button_layout.addWidget(self.transfer_button)
-        button_layout.addWidget(self.edit_selected_button)
         root_layout.addLayout(button_layout)
 
         self.invoice_table = QTableWidget(0, 10)
@@ -161,10 +158,8 @@ class InvoiceTransferTab(QWidget):
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.search_input.textChanged.connect(self.filter_invoices)
         self.invoice_table.itemSelectionChanged.connect(self.load_selected_invoice_details)
-        self.invoice_table.itemSelectionChanged.connect(self.update_edit_button_text)
         self.invoice_table.itemChanged.connect(self.handle_table_item_changed)
         self.detail_table.itemChanged.connect(self.handle_detail_item_changed)
-        self.update_edit_button_text()
 
         self.load_cached_warehouses()
         self.select_saved_warehouse()
@@ -440,7 +435,6 @@ class InvoiceTransferTab(QWidget):
 
         self.invoice_table.itemChanged.connect(self.handle_table_item_changed)
         self.update_status_summary()
-        self.update_edit_button_text()
 
         if len(self.all_invoices) > 0:
             self.load_button.setText("Faturaları Yenile")
@@ -537,17 +531,12 @@ class InvoiceTransferTab(QWidget):
 
             invoice_no = str(row_data[0]).strip() if row_data else ""
             invoice_id = self.invoice_id_map.get(invoice_no)
-            is_row_editable = invoice_id in self.editable_invoice_ids if invoice_id is not None else False
 
             for col_index, value in enumerate(row_data, start=1):
                 item = QTableWidgetItem(value)
                 if col_index == 1:
                     item.setData(Qt.UserRole, invoice_id)
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                elif is_row_editable:
-                    item.setFlags(item.flags() | Qt.ItemIsEditable)
-                else:
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.invoice_table.setItem(row_index, col_index, item)
 
             invoice_id_text = str(invoice_id) if invoice_id is not None else "-"
@@ -561,59 +550,7 @@ class InvoiceTransferTab(QWidget):
             normalized_row.append("")
         return tuple(normalized_row)
 
-    def get_selected_row_indexes(self):
-        selection_model = self.invoice_table.selectionModel()
-        if selection_model is None:
-            return []
-        return sorted(index.row() for index in selection_model.selectedRows())
 
-    def update_edit_button_text(self):
-        selected_count = len(self.get_selected_row_indexes())
-        if selected_count == 1:
-            self.edit_selected_button.setText("Seçili Satırı Düzenle")
-        else:
-            self.edit_selected_button.setText("Seçili Satırları Düzenle")
-
-    def enable_selected_rows_editing(self):
-        selected_rows = self.get_selected_row_indexes()
-        if not selected_rows:
-            QMessageBox.warning(self, "Satır Seçilmedi", "Önce düzenlemek istediğin satırı veya satırları seç.")
-            return
-
-        self.invoice_table.setEditTriggers(
-            QAbstractItemView.DoubleClicked
-            | QAbstractItemView.EditKeyPressed
-            | QAbstractItemView.SelectedClicked
-        )
-
-        for row in selected_rows:
-            invoice_no_item = self.invoice_table.item(row, 1)
-            invoice_id = invoice_no_item.data(Qt.UserRole) if invoice_no_item is not None else None
-            if invoice_id is not None:
-                self.editable_invoice_ids.add(invoice_id)
-
-            for col in range(2, 9):
-                item = self.invoice_table.item(row, col)
-                if item is None:
-                    continue
-                item.setFlags(item.flags() | Qt.ItemIsEditable)
-
-        # Enable category dropdowns for currently displayed detail table if it belongs to an edited invoice
-        current_invoice_row = self.invoice_table.currentRow()
-        if current_invoice_row in selected_rows:
-            self.detail_table.setEditTriggers(
-                QAbstractItemView.DoubleClicked
-                | QAbstractItemView.EditKeyPressed
-                | QAbstractItemView.SelectedClicked
-            )
-            for row in range(self.detail_table.rowCount()):
-                combo = self.detail_table.cellWidget(row, 8)
-                if isinstance(combo, QComboBox):
-                    combo.setEnabled(True)
-                unit_item = self.detail_table.item(row, 5)
-                if unit_item:
-                    unit_item.setFlags(unit_item.flags() | Qt.ItemIsEditable)
-                    unit_item.setBackground(QColor("#fffbe6"))
 
     def enable_detail_row_editing(self):
         current_invoice_row = self.invoice_table.currentRow()
@@ -956,14 +893,14 @@ class InvoiceTransferTab(QWidget):
         selected_raw_invoices = self.get_selected_raw_invoices()
 
         if not selected_invoice_ids:
-            QMessageBox.warning(self, "Seçim Yok", "Önce aktarılacak faturaları seç.")
+            QMessageBox.warning(self, "Seçim Yok", "Önce aktarılacak faturaları seçiniz.")
             return
 
         if len(selected_raw_invoices) != len(selected_invoice_ids):
             QMessageBox.critical(
                 self,
                 "Aktarım Hatası",
-                "Seçili faturaların ham verileri eksik. Faturaları yeniden yükleyip tekrar dene.",
+                "Seçili faturaların ham verileri eksik. Faturaları yeniden yükleyip tekrar deneyiniz.",
             )
             return
 
