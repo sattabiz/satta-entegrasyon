@@ -122,7 +122,7 @@ class InvoiceTransferTab(QWidget):
         detail_title_row.addWidget(self.edit_detail_row_button)
         detail_layout.addLayout(detail_title_row)
 
-        self.detail_table = QTableWidget(0, 9)
+        self.detail_table = QTableWidget(0, 10)
         self.detail_table.setHorizontalHeaderLabels([
             "Seç",
             "Ürün Kodu",
@@ -131,6 +131,7 @@ class InvoiceTransferTab(QWidget):
             "Miktar",
             "Birim",
             "Birim Fiyat",
+            "Masraf Merkezi",
             "Kategori",
             "Kategori ERP Kodu",
         ])
@@ -581,7 +582,7 @@ class InvoiceTransferTab(QWidget):
                 | QAbstractItemView.SelectedClicked
             )
             for row in range(self.detail_table.rowCount()):
-                combo = self.detail_table.cellWidget(row, 7)
+                combo = self.detail_table.cellWidget(row, 8)
                 if isinstance(combo, QComboBox):
                     combo.setEnabled(True)
                 unit_item = self.detail_table.item(row, 5)
@@ -626,7 +627,7 @@ class InvoiceTransferTab(QWidget):
         )
 
         for row in checked_rows:
-            combo = self.detail_table.cellWidget(row, 7)
+            combo = self.detail_table.cellWidget(row, 8)
             if isinstance(combo, QComboBox):
                 combo.setEnabled(True)
             unit_item = self.detail_table.item(row, 5)
@@ -719,6 +720,7 @@ class InvoiceTransferTab(QWidget):
                 unit = self._safe_text(product.get("unit"), "-")
                 shipped_amount = self._format_quantity(product.get("shipped_amount"))
                 price = self._format_money(product.get("price"))
+                cost_center_name = self._extract_cost_center_name(product, raw_invoice)
 
                 row_index = self.detail_table.rowCount()
                 self.detail_table.insertRow(row_index)
@@ -730,14 +732,14 @@ class InvoiceTransferTab(QWidget):
                 select_item.setText("")
                 self.detail_table.setItem(row_index, 0, select_item)
 
-                # Product info in columns 1 to 6
-                cols = [product_code, product_name, description, shipped_amount, unit, price]
+                # Product info in columns 1 to 7
+                cols = [product_code, product_name, description, shipped_amount, unit, price, cost_center_name]
                 for col_index, val in enumerate(cols, start=1):
                     item = QTableWidgetItem(val)
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     self.detail_table.setItem(row_index, col_index, item)
 
-                # Column 7: Category (QComboBox)
+                # Column 8: Category (QComboBox)
                 category_combo = QComboBox()
                 category_combo.setMinimumHeight(28)
                 category_combo.addItem("Seçiniz...", None)
@@ -773,9 +775,9 @@ class InvoiceTransferTab(QWidget):
                     self.handle_line_category_changed(inv_id, p_idx, combo)
                 )
 
-                self.detail_table.setCellWidget(row_index, 7, category_combo)
+                self.detail_table.setCellWidget(row_index, 8, category_combo)
 
-                # Column 8: Category ERP Code
+                # Column 9: Category ERP Code
                 current_erp_code = ""
                 if selected_idx > 0:
                     current_erp_code = self.satta_categories[selected_idx - 1].get("category_erp_code", "")
@@ -784,7 +786,7 @@ class InvoiceTransferTab(QWidget):
 
                 erp_item = QTableWidgetItem(str(current_erp_code))
                 erp_item.setFlags(erp_item.flags() & ~Qt.ItemIsEditable)
-                self.detail_table.setItem(row_index, 8, erp_item)
+                self.detail_table.setItem(row_index, 9, erp_item)
 
         finally:
             self.detail_table.blockSignals(False)
@@ -1077,7 +1079,7 @@ class InvoiceTransferTab(QWidget):
         # 1. Update the row cells in detail_table
         target_row = -1
         for row in range(self.detail_table.rowCount()):
-            if self.detail_table.cellWidget(row, 7) == combo_widget:
+            if self.detail_table.cellWidget(row, 8) == combo_widget:
                 target_row = row
                 break
 
@@ -1093,8 +1095,8 @@ class InvoiceTransferTab(QWidget):
             new_category_id = cat_data.get("id")
             new_category_type = str(cat_data.get("category_type", "item")).strip()
 
-        # Update ERP code cell text (read-only) in column 8
-        erp_item = self.detail_table.item(target_row, 8)
+        # Update ERP code cell text (read-only) in column 9
+        erp_item = self.detail_table.item(target_row, 9)
         if erp_item:
             erp_item.setText(new_erp_code)
 
@@ -1171,6 +1173,37 @@ class InvoiceTransferTab(QWidget):
             return float(value)
         except (TypeError, ValueError):
             return 0.0
+
+    def _extract_cost_center_name(self, product: dict, invoice: dict = None) -> str:
+        if isinstance(product, dict):
+            val = product.get("cost_center_name")
+            if val is not None and str(val).strip():
+                return str(val).strip()
+
+            cost_center = product.get("cost_center")
+            if isinstance(cost_center, dict):
+                for key in ["name", "cost_center_name", "title", "label"]:
+                    name_val = cost_center.get(key)
+                    if name_val is not None and str(name_val).strip():
+                        return str(name_val).strip()
+            elif cost_center is not None and str(cost_center).strip():
+                return str(cost_center).strip()
+
+        if isinstance(invoice, dict):
+            val_inv = invoice.get("cost_center_name")
+            if val_inv is not None and str(val_inv).strip():
+                return str(val_inv).strip()
+
+            cost_center_inv = invoice.get("cost_center")
+            if isinstance(cost_center_inv, dict):
+                for key in ["name", "cost_center_name", "title", "label"]:
+                    name_val = cost_center_inv.get(key)
+                    if name_val is not None and str(name_val).strip():
+                        return str(name_val).strip()
+            elif cost_center_inv is not None and str(cost_center_inv).strip():
+                return str(cost_center_inv).strip()
+
+        return "-"
 
     @staticmethod
     def _safe_text(value, default=""):
