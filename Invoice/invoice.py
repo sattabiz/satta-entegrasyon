@@ -441,7 +441,11 @@ class InvoiceTransferTab(QWidget):
         self.invoice_table.itemChanged.connect(self.handle_table_item_changed)
         self.update_status_summary()
         self.update_edit_button_text()
-        self.load_button.setText("Faturaları Yenile")
+
+        if len(self.all_invoices) > 0:
+            self.load_button.setText("Faturaları Yenile")
+        else:
+            self.load_button.setText("Faturaları Satta'dan Al")
 
         if self.invoice_table.rowCount() > 0:
             self.invoice_table.selectRow(0)
@@ -452,8 +456,8 @@ class InvoiceTransferTab(QWidget):
 
     def load_invoices(self):
         try:
-            self.satta_categories = self.fetch_categories()
             invoice_rows, invoice_details, invoice_id_map, invoice_raw_map = self.fetch_invoices()
+            self.satta_categories = self.fetch_categories()
             self.apply_invoice_data(invoice_rows, invoice_details, invoice_id_map, invoice_raw_map)
         except Exception as exc:
             satta_settings = self.load_satta_settings()
@@ -461,19 +465,39 @@ class InvoiceTransferTab(QWidget):
             username = satta_settings.get("username", "")
             password = satta_settings.get("password", "")
 
+            saved_token = ""
+            try:
+                connector = SattaInvoiceConnector(
+                    SattaInvoiceConfig(
+                        base_url=satta_settings.get("base_url", ""),
+                        username=username,
+                        password=password,
+                        token=token,
+                    )
+                )
+                saved_token = connector.get_saved_token()
+            except Exception:
+                pass
+
             is_cred_empty = not username or not password
+            is_expired = not saved_token or is_token_expired(saved_token)
+
+            exc_str = str(exc)
 
             if is_cred_empty:
                 msg = (
                     "Satta e-posta veya şifresi Ayarlar sekmesinde girilmemiş.\n\n"
+                    "Ayarlar sekmesine gidip giriş bilgilerinizi eklemek ister misiniz?"
                 )
-            elif not token or is_token_expired(token):
+            elif is_expired or "login" in exc_str.lower() or "token" in exc_str.lower() or "401" in exc_str or "403" in exc_str:
                 msg = (
-                    "Satta oturum süreniz dolmuş veya token bulunamadı. Oturumunuzu yenileyiniz.\n\n"
+                    "Satta oturum süreniz dolmuş veya token doğrulanamadı.\n\n"
+                    "Oturumunuzu yenilemek ve giriş bilgilerinizi kontrol etmek için Ayarlar sekmesine geçmek ister misiniz?"
                 )
             else:
                 msg = (
-                    f"Satta faturaları alınırken bir hata oluştu:\n{exc}\n\n"
+                    f"Satta faturaları alınırken bir hata oluştu:\n{exc_str}\n\n"
+                    "Ayarlar sekmesine geçmek ister misiniz?"
                 )
 
             reply = QMessageBox.warning(
@@ -924,6 +948,7 @@ class InvoiceTransferTab(QWidget):
         else:
             self.detail_table.setRowCount(0)
             self.detail_title_label.setText("Seçili fatura kalemleri")
+            self.load_button.setText("Faturaları Satta'dan Al")
 
     def transfer_selected_invoices(self):
         selected_invoice_ids = self.get_selected_invoice_ids()

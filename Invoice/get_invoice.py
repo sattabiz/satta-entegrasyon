@@ -120,7 +120,7 @@ class SattaInvoiceConnector:
     def ensure_token(self, force_refresh: bool = False) -> str:
         if not force_refresh:
             current_token = self.get_saved_token()
-            if current_token:
+            if current_token and not is_token_expired(current_token):
                 return current_token
 
         new_token = self.login_and_get_token()
