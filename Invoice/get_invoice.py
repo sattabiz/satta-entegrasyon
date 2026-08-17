@@ -10,7 +10,7 @@ from Common.path_helper import user_data_path
 
 
 InvoiceUiRow = Tuple[str, str, str, str, str, str, str, str]
-InvoiceDetailRow = Tuple[str, str, str, str, str, str]
+InvoiceDetailRow = Tuple[str, str, str, str, str, str, str]
 InvoiceRawMap = Dict[int, Dict[str, Any]]
 
 
@@ -120,7 +120,7 @@ class SattaInvoiceConnector:
     def ensure_token(self, force_refresh: bool = False) -> str:
         if not force_refresh:
             current_token = self.get_saved_token()
-            if current_token:
+            if current_token and not is_token_expired(current_token):
                 return current_token
 
         new_token = self.login_and_get_token()
@@ -311,6 +311,7 @@ class SattaInvoiceConnector:
                 description = "-"
 
             unit = self._safe_text(product.get("unit"), "-")
+            cost_center_name = self._extract_cost_center_name(product, invoice)
 
             detail_rows.append(
                 (
@@ -320,10 +321,42 @@ class SattaInvoiceConnector:
                     self._format_quantity(product.get("shipped_amount")),
                     unit,
                     self._format_money(product.get("price")),
+                    cost_center_name,
                 )
             )
 
         return detail_rows
+
+    def _extract_cost_center_name(self, product: Dict[str, Any], invoice: Optional[Dict[str, Any]] = None) -> str:
+        if isinstance(product, dict):
+            val = product.get("cost_center_name")
+            if val is not None and str(val).strip():
+                return str(val).strip()
+
+            cost_center = product.get("cost_center")
+            if isinstance(cost_center, dict):
+                for key in ["name", "cost_center_name", "title", "label"]:
+                    name_val = cost_center.get(key)
+                    if name_val is not None and str(name_val).strip():
+                        return str(name_val).strip()
+            elif cost_center is not None and str(cost_center).strip():
+                return str(cost_center).strip()
+
+        if isinstance(invoice, dict):
+            val_inv = invoice.get("cost_center_name")
+            if val_inv is not None and str(val_inv).strip():
+                return str(val_inv).strip()
+
+            cost_center_inv = invoice.get("cost_center")
+            if isinstance(cost_center_inv, dict):
+                for key in ["name", "cost_center_name", "title", "label"]:
+                    name_val = cost_center_inv.get(key)
+                    if name_val is not None and str(name_val).strip():
+                        return str(name_val).strip()
+            elif cost_center_inv is not None and str(cost_center_inv).strip():
+                return str(cost_center_inv).strip()
+
+        return "-"
 
     def _build_auth_headers(self, token: str) -> Dict[str, str]:
         return {

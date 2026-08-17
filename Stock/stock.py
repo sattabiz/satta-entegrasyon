@@ -21,6 +21,7 @@ from Stock.get_cost_center import SattaCostCenterConnector
 from Stock.push_products import SattaProductPushConnector
 from Stock.products_reader import ProductReader, ProductReaderConfig
 from Common.checkable_combo import CheckableComboBox
+from Common.table_utils import enable_table_copy
 
 SETTINGS_FILE = user_data_path("app_settings.json")
 
@@ -102,6 +103,7 @@ class StockTab(QWidget):
         self.stock_table.horizontalHeader().setStretchLastSection(False)
         self.stock_table.setWordWrap(True)
         self.stock_table.setTextElideMode(Qt.ElideRight)
+        enable_table_copy(self.stock_table)
         
         self.current_headers = []
 

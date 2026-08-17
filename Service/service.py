@@ -21,6 +21,7 @@ from Service.get_cost_center import SattaServiceCostCenterConnector
 from Service.push_services import SattaServicePushConnector
 from Service.services_reader import ServiceReader, ServiceReaderConfig
 from Common.checkable_combo import CheckableComboBox
+from Common.table_utils import enable_table_copy
 
 SETTINGS_FILE = user_data_path("app_settings.json")
 
@@ -101,6 +102,7 @@ class ServiceTab(QWidget):
         self.service_table.horizontalHeader().setStretchLastSection(False)
         self.service_table.setWordWrap(True)
         self.service_table.setTextElideMode(Qt.ElideRight)
+        enable_table_copy(self.service_table)
         
         self.current_headers = []
 

@@ -19,6 +19,7 @@ from Supplier.supplier_reader import SupplierReader, SupplierReaderConfig
 import json
 from Supplier.push_suppliers import SattaSupplierPushConnector
 from Common.path_helper import project_path
+from Common.table_utils import enable_table_copy
 import unicodedata
 
 
@@ -79,11 +80,14 @@ class SupplierSendTab(QWidget):
         ])
         self.supplier_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.supplier_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.supplier_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.supplier_table.setColumnWidth(0, 36)
+        self.supplier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        enable_table_copy(self.supplier_table)
 
         supplier_header = self.supplier_table.horizontalHeader()
         supplier_header.setSectionResizeMode(QHeaderView.Interactive)
 
-        self.supplier_table.setColumnWidth(0, 44)
         self.supplier_table.setColumnWidth(1, 110)
         self.supplier_table.setColumnWidth(2, 220)
         self.supplier_table.setColumnWidth(3, 160)
