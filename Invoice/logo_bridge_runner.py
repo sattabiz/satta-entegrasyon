@@ -108,6 +108,8 @@ class LogoBridgeRunner:
     def _resolve_bridge_executable_path(self) -> str:
         candidate_paths = [
             project_path("LogoBridge", "publish", "LogoBridge.Console.exe"),
+            project_path("LogoBridge", "src", "LogoBridge.Console", "bin", "Debug", "net8.0-windows", "win-x86", "LogoBridge.Console.exe"),
+            project_path("LogoBridge", "src", "LogoBridge.Console", "bin", "Release", "net8.0-windows", "win-x86", "LogoBridge.Console.exe"),
             project_path("LogoBridge", "src", "LogoBridge.Console", "bin", "x86", "Debug", "net8.0-windows", "LogoBridge.Console.exe"),
             project_path("LogoBridge", "src", "LogoBridge.Console", "bin", "x86", "Release", "net8.0-windows", "LogoBridge.Console.exe"),
             user_data_path("LogoBridge", "LogoBridge.Console.exe"),
