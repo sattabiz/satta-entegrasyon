@@ -87,6 +87,8 @@ class LogoTransferService:
                     message += f"\n\nHata Detayı: {specific_error}"
 
             if is_success:
+                erp_ref = self._to_int(bridge_result.get("logical_ref")) or 0
+                self._post_process_einvoice(erp_ref, details)
                 successful_invoices.append({"id": invoice_id, "no": invoice_no})
                 if invoice_id is not None:
                     successful_invoice_ids.append(invoice_id)
@@ -101,6 +103,57 @@ class LogoTransferService:
             "failed_results": failed_results,
             "bridge_results": bridge_results,
         }
+
+    def _post_process_einvoice(self, erp_logical_ref: int, details: Dict[str, Any]) -> None:
+        if not isinstance(details, dict) or erp_logical_ref <= 0:
+            return
+
+        is_e_invoice = details.get("is_e_invoice") == "true"
+        guid = str(details.get("guid") or "").strip()
+        profile_id = self._to_int(details.get("profile_id")) or 1
+        connect_logical_ref = self._to_int(details.get("connect_logical_ref")) or 0
+
+        # 1. Tiger DB INVOICE tablosunda EINVOICE ve GUID alanlarını garantiye al
+        if is_e_invoice and guid:
+            try:
+                import pyodbc
+                server = str(self.logo_settings.get("server", "")).strip()
+                database = str(self.logo_settings.get("database", "")).strip()
+                username = str(self.logo_settings.get("db_username", "")).strip()
+                password = str(self.logo_settings.get("db_password", "")).strip()
+                firm_no = self._to_int(self.logo_settings.get("firm_no")) or 1
+                period_no = self._to_int(self.logo_settings.get("period_no")) or 1
+
+                if server and database:
+                    if username:
+                        conn_str = f"DRIVER={{SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password};"
+                    else:
+                        conn_str = f"DRIVER={{SQL Server}};SERVER={server};DATABASE={database};Trusted_Connection=yes;"
+
+                    table_name = f"LG_{firm_no:03d}_{period_no:02d}_INVOICE"
+                    update_query = f"""
+                    UPDATE {table_name}
+                    SET EINVOICE = 1,
+                        GUID = ?,
+                        PROFILE_ID = ?,
+                        ESTATUS = 12
+                    WHERE LOGICALREF = ?
+                    """
+                    with pyodbc.connect(conn_str, timeout=5) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(update_query, (guid, profile_id, erp_logical_ref))
+                        conn.commit()
+            except Exception:
+                pass
+
+        # 2. Connect APPROVAL tablosunda DOCREF güncelle
+        if connect_logical_ref > 0 and erp_logical_ref > 0:
+            try:
+                from Invoice.logo_connect_reader import LogoConnectReader
+                reader = LogoConnectReader(self.logo_settings)
+                reader.mark_as_transferred(connect_logical_ref, erp_logical_ref)
+            except Exception:
+                pass
 
     @staticmethod
     def _safe_text(value: Any, default: str = "") -> str:

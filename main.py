@@ -119,6 +119,9 @@ DEFAULT_RUNTIME_FILES = {
             "password": "",
             "firm_no": 1,
             "period_no": 1,
+            "use_logo_connect": False,
+            "connect_database": "",
+            "connect_firm_no": 1,
         },
         "sap": {
             "host": "",

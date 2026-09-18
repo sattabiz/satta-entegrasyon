@@ -438,6 +438,17 @@ public sealed class LogoObjectService
             dataObject.DataFields.FieldByName("TIME").Value = ResolveLogoPackedTime(payload.DocumentTime);
             dataObject.DataFields.FieldByName("ARP_CODE").Value = payload.ArpCode ?? string.Empty;
             try { dataObject.FillDefaults(); } catch { }
+
+            if (payload.IsEInvoice || !string.IsNullOrWhiteSpace(payload.Guid))
+            {
+                try { dataObject.DataFields.FieldByName("EINVOICE").Value = (short)1; } catch { }
+                try { dataObject.DataFields.FieldByName("PROFILE_ID").Value = (short)(payload.ProfileId > 0 ? payload.ProfileId : 1); } catch { }
+                try { dataObject.DataFields.FieldByName("ESTATUS").Value = (short)12; } catch { }
+                if (!string.IsNullOrWhiteSpace(payload.Guid))
+                {
+                    try { dataObject.DataFields.FieldByName("GUID").Value = payload.Guid; } catch { }
+                }
+            }
             
             var paymentCode = ReadOptionalPayloadString(payload, "PaymentCode", string.Empty);
             if (!string.IsNullOrWhiteSpace(paymentCode))
@@ -1550,6 +1561,10 @@ public sealed class LogoObjectService
         result.Details["currency_code"] = payload.CurrencyCode;
         result.Details["warehouse_nr"] = payload.WarehouseNr.ToString(CultureInfo.InvariantCulture);
         result.Details["source_index"] = payload.SourceIndex.ToString(CultureInfo.InvariantCulture);
+        result.Details["is_e_invoice"] = payload.IsEInvoice ? "true" : "false";
+        result.Details["guid"] = payload.Guid;
+        result.Details["profile_id"] = payload.ProfileId.ToString(CultureInfo.InvariantCulture);
+        result.Details["connect_logical_ref"] = payload.ConnectLogicalRef.ToString(CultureInfo.InvariantCulture);
     }
 
     private void AppendMappedHeaderSummary(BridgeResult result, Dictionary<string, string> headerFields)
