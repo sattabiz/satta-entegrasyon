@@ -187,7 +187,7 @@ class InvoiceTransferTab(QWidget):
                 "E-Fatura Durumu",
                 "Invoice ID",
             ])
-            self.invoice_table.setColumnWidth(9, 150)
+            self.invoice_table.setColumnWidth(9, 230)
         else:
             self.invoice_table.setColumnCount(10)
             self.invoice_table.setHorizontalHeaderLabels([
@@ -498,7 +498,7 @@ class InvoiceTransferTab(QWidget):
 
                     for inv_id, raw_inv in invoice_raw_map.items():
                         match_res = matcher.match_satta_invoice(raw_inv)
-                        if match_res.is_matched and match_res.connect_record:
+                        if match_res.is_matched and match_res.connect_record and matcher.is_valid_ettn(match_res.connect_record.ettn_guid):
                             c_rec = match_res.connect_record
                             raw_inv["is_e_invoice"] = True
                             raw_inv["ettn_guid"] = c_rec.ettn_guid
@@ -512,6 +512,7 @@ class InvoiceTransferTab(QWidget):
                             raw_inv["ettn_guid"] = None
                             raw_inv["profile_id"] = None
                             raw_inv["connect_logical_ref"] = None
+                            raw_inv["gib_invoice_no"] = None
                             raw_inv["e_invoice_status_text"] = match_res.display_text
                             raw_inv["e_invoice_match_reason"] = match_res.reason
                 except Exception as c_exc:
@@ -628,19 +629,32 @@ class InvoiceTransferTab(QWidget):
                 status_text = raw_inv.get("e_invoice_status_text", "") if isinstance(raw_inv, dict) else ""
                 reason = raw_inv.get("e_invoice_match_reason", "") if isinstance(raw_inv, dict) else ""
                 ettn = raw_inv.get("ettn_guid", "") if isinstance(raw_inv, dict) else ""
+                gib_no = raw_inv.get("gib_invoice_no", "") if isinstance(raw_inv, dict) else ""
 
                 if not status_text:
-                    status_text = "✓ E-Fatura" if is_e_inv else "⏳ Kağıt Fatura"
+                    if is_e_inv:
+                        status_text = f"✓ E-Fatura ({gib_no})" if gib_no else "✓ E-Fatura"
+                    else:
+                        status_text = "⏳ Connect'te Yok"
 
                 status_item = QTableWidgetItem(status_text)
                 status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
 
                 if is_e_inv:
                     status_item.setForeground(QColor("#2e7d32"))
-                    status_item.setToolTip(f"Logo Connect ile Eşleşti\nETTN (GUID): {ettn}\nDetay: {reason}")
+                    status_item.setToolTip(
+                        f"Logo Connect ile Eşleşti\n"
+                        f"Connect Fatura No: {gib_no}\n"
+                        f"ETTN (GUID): {ettn}\n"
+                        f"Eşleşme Detayı: {reason}"
+                    )
                 else:
                     status_item.setForeground(QColor("#d84315"))
-                    status_item.setToolTip(f"Connect Gelen Kutusunda Bulunamadı\nDetay: {reason}\n(Kağıt Fatura olarak aktarılabilir)")
+                    status_item.setToolTip(
+                        f"Connect Gelen Kutusunda Bulunamadı\n"
+                        f"Detay: {reason}\n"
+                        f"(Kağıt Fatura olarak aktarılabilir)"
+                    )
 
                 self.invoice_table.setItem(row_index, 9, status_item)
 

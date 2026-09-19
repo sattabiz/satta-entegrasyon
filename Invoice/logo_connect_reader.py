@@ -74,8 +74,16 @@ class LogoConnectReader:
         SELECT 
             LOGICALREF,
             ISNULL(DOCNR, '') AS DOCNR,
-            ISNULL(REFERENCEID, '') AS REFERENCEID,
-            ISNULL(CLRETAILVKN, '') AS CLRETAILVKN,
+            COALESCE(
+                NULLIF(LTRIM(RTRIM(REFERENCEID)), ''), 
+                NULLIF(LTRIM(RTRIM(REPLACE(FILENAME, '.xml', ''))), ''), 
+                ''
+            ) AS REFERENCEID,
+            COALESCE(
+                NULLIF(LTRIM(RTRIM(CLRETAILVKN)), ''), 
+                NULLIF(LTRIM(RTRIM(SENDER)), ''), 
+                ''
+            ) AS CLRETAILVKN,
             ISNULL(SENDERTITLE, '') AS SENDERTITLE,
             DOCDATE,
             ISNULL(DOCTOTAL, 0) AS DOCTOTAL,
