@@ -35,6 +35,13 @@ class LogoPayloadBuilder:
             if isinstance(p, dict)
         )
 
+        is_e_invoice = bool(invoice.get("is_e_invoice", False))
+        ettn_guid = self._safe_text(invoice.get("ettn_guid") or invoice.get("guid"))
+        profile_id = self._to_int(invoice.get("profile_id"), default=1)
+        gib_no = self._safe_text(invoice.get("gib_invoice_no"))
+        final_doc_number = gib_no if gib_no else invoice_no
+        final_invoice_number = gib_no if gib_no else invoice_no
+
         payload = {
             "firm_no": self._to_int(self.logo_settings.get("firm_no"), default=1),
             "period_no": self._to_int(self.logo_settings.get("period_no"), default=1),
@@ -44,11 +51,15 @@ class LogoPayloadBuilder:
             "logo_working_year": self._resolve_logo_working_year(invoice),
             "invoice_type": "purchase",
             "logo_invoice_type": 4 if is_service_invoice else 1,
-            "document_number": invoice_no,
+            "is_e_invoice": is_e_invoice,
+            "guid": ettn_guid,
+            "profile_id": profile_id,
+            "connect_logical_ref": self._to_int(invoice.get("connect_logical_ref"), default=0),
+            "document_number": final_doc_number,
             "document_date": invoice_date,
             "document_time": self._resolve_document_time(invoice.get("invoice_date")),
             "arp_code": seller_erp_id,
-            "invoice_number": invoice_no,
+            "invoice_number": final_invoice_number,
             "group_code": "1",
             "do_code": "~",
             "description": "",

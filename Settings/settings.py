@@ -1,6 +1,7 @@
 import json
 
 from Common.qt_compat import (
+    QCheckBox,
     QFormLayout,
     QFrame,
     QGroupBox,
@@ -58,6 +59,7 @@ class SettingsTab(QWidget):
 
         self.satta_login_button.clicked.connect(self.handle_satta_login)
         self.connector_test_button.clicked.connect(self.handle_connector_test)
+        self.connect_test_button.clicked.connect(self.handle_connect_test)
         self.save_button.clicked.connect(self.save_settings)
 
         self.satta_base_url_input.textChanged.connect(self.on_satta_credentials_changed)
@@ -75,7 +77,9 @@ class SettingsTab(QWidget):
             self.logo_user_password_input.textChanged.connect(self.check_logo_test_button_visibility)
             self.logo_firm_no_input.valueChanged.connect(self.check_logo_test_button_visibility)
             self.logo_period_no_input.valueChanged.connect(self.check_logo_test_button_visibility)
+            self.use_logo_connect_checkbox.toggled.connect(self.update_connect_test_button_visibility)
             self.check_logo_test_button_visibility()
+            self.update_connect_test_button_visibility()
 
     def load_active_connector(self) -> str:
         if not RUNTIME_CONFIG_FILE.exists():
@@ -141,9 +145,15 @@ class SettingsTab(QWidget):
 
         if self.active_connector == "logo":
             self.connector_test_button = QPushButton("Logo ve DB Bağlantısını Test Et")
+            self.connect_test_button = QPushButton("Logo Connect DB Bağlantısını Test Et")
+            connector_layout.addWidget(self.connector_test_button)
+            connector_layout.addWidget(self.connect_test_button)
         else:
             self.connector_test_button = QPushButton(f"{connector_display_name} Bağlantısını Test Et")
-        connector_layout.addWidget(self.connector_test_button)
+            self.connect_test_button = QPushButton("Logo Connect DB Bağlantısını Test Et")
+            self.connect_test_button.setVisible(False)
+            connector_layout.addWidget(self.connector_test_button)
+            connector_layout.addWidget(self.connect_test_button)
 
         return connector_group
 
@@ -221,12 +231,27 @@ class SettingsTab(QWidget):
         self.logo_period_no_input.setRange(1, 99)
         self.logo_period_no_input.setValue(1)
 
+        self.use_logo_connect_checkbox = QCheckBox("Logo Connect Entegrasyonunu Kullan (E-Fatura Eşleme)")
+        self.logo_connect_database_input = QLineEdit()
+        self.logo_connect_database_input.setPlaceholderText("Connect DB Adı (Boş ise ana DB kullanılır)")
+        self.logo_connect_database_input.setEnabled(False)
+        self.use_logo_connect_checkbox.toggled.connect(self.logo_connect_database_input.setEnabled)
+
+        self.logo_connect_firm_no_input = QSpinBox()
+        self.logo_connect_firm_no_input.setRange(1, 999)
+        self.logo_connect_firm_no_input.setValue(1)
+        self.logo_connect_firm_no_input.setEnabled(False)
+        self.use_logo_connect_checkbox.toggled.connect(self.logo_connect_firm_no_input.setEnabled)
+
         database_form.addRow("SQL Server", self.logo_server_input)
         database_form.addRow("Database", self.logo_database_input)
         database_form.addRow("DB Kullanıcı", self.logo_db_username_input)
         database_form.addRow("DB Şifre", self.logo_db_password_input)
         database_form.addRow("Firma No", self.logo_firm_no_input)
         database_form.addRow("Dönem No", self.logo_period_no_input)
+        database_form.addRow("", self.use_logo_connect_checkbox)
+        database_form.addRow("Connect DB", self.logo_connect_database_input)
+        database_form.addRow("Connect Firma No", self.logo_connect_firm_no_input)
 
         return database_group
 
@@ -500,6 +525,76 @@ class SettingsTab(QWidget):
                 f"Logo test işlemi yürütülürken hata oluştu:\n{exc}"
             )
 
+    def handle_connect_test(self) -> None:
+        server = self.logo_server_input.text().strip()
+        main_database = self.logo_database_input.text().strip()
+        connect_database = self.logo_connect_database_input.text().strip() or main_database
+        db_username = self.logo_db_username_input.text().strip()
+        db_password = self.logo_db_password_input.text()
+        connect_firm_no = int(self.logo_connect_firm_no_input.value())
+
+        if not server or not connect_database:
+            QMessageBox.warning(
+                self,
+                "Eksik Bilgi",
+                "Connect DB bağlantısı için SQL Server ve Veritabanı bilgileri gereklidir."
+            )
+            return
+
+        if db_username:
+            conn_str = (
+                f"DRIVER={{SQL Server}};"
+                f"SERVER={server};"
+                f"DATABASE={connect_database};"
+                f"UID={db_username};"
+                f"PWD={db_password};"
+            )
+        else:
+            conn_str = (
+                f"DRIVER={{SQL Server}};"
+                f"SERVER={server};"
+                f"DATABASE={connect_database};"
+                f"Trusted_Connection=yes;"
+            )
+
+        import pyodbc
+        table_name = f"LG_{connect_firm_no:03d}_APPROVAL"
+        try:
+            with pyodbc.connect(conn_str, timeout=5) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table_name} WITH (NOLOCK)")
+                    row = cursor.fetchone()
+                    count = row[0] if row else 0
+                    QMessageBox.information(
+                        self,
+                        "Connect DB Bağlantısı Başarılı",
+                        f"Logo Connect veri tabanına ve onay tablosuna başarıyla bağlanıldı!\n\n"
+                        f"• Sunucu: {server}\n"
+                        f"• Veri Tabanı: {connect_database}\n"
+                        f"• Tablo: {table_name}\n"
+                        f"• Mevcut Kayıt Sayısı: {count}"
+                    )
+                except Exception as tbl_err:
+                    QMessageBox.warning(
+                        self,
+                        "Tablo Bulunamadı",
+                        f"Veri tabanına başarıyla bağlanıldı fakat '{table_name}' tablosu okunamadı:\n{tbl_err}\n\n"
+                        f"Lütfen Connect Veri Tabanı Adı veya Connect Firma No ({connect_firm_no:03d}) alanını kontrol ediniz."
+                    )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Connect DB Bağlantı Hatası",
+                f"Logo Connect veri tabanına bağlanılamadı:\n{exc}"
+            )
+
+    def update_connect_test_button_visibility(self) -> None:
+        if self.active_connector == "logo":
+            self.connect_test_button.setVisible(self.use_logo_connect_checkbox.isChecked())
+        else:
+            self.connect_test_button.setVisible(False)
+
     def handle_sap_test(self) -> None:
         if not self.sap_host_input.text().strip() or not self.sap_client_input.text().strip():
             QMessageBox.warning(self, "Eksik Bilgi", "SAP Host ve Client alanlarını doldur.")
@@ -539,6 +634,9 @@ class SettingsTab(QWidget):
                 "period_no": 1,
                 "logo_user": "",
                 "logo_password": "",
+                "use_logo_connect": False,
+                "connect_database": "",
+                "connect_firm_no": 1,
             },
             "sap": {
                 "host": "",
@@ -589,6 +687,9 @@ class SettingsTab(QWidget):
                 "period_no": self.logo_period_no_input.value(),
                 "logo_user": self.logo_user_input.text().strip(),
                 "logo_password": self.logo_user_password_input.text().strip(),
+                "use_logo_connect": self.use_logo_connect_checkbox.isChecked(),
+                "connect_database": self.logo_connect_database_input.text().strip(),
+                "connect_firm_no": self.logo_connect_firm_no_input.value(),
             }
 
         if self.active_connector == "sap":
@@ -665,6 +766,16 @@ class SettingsTab(QWidget):
                 self.logo_period_no_input.setValue(int(logo_settings.get("period_no", 1) or 1))
                 self.logo_user_input.setText(str(logo_settings.get("logo_user", "")))
                 self.logo_user_password_input.setText(str(logo_settings.get("logo_password", "")))
+                is_connect_enabled = bool(logo_settings.get("use_logo_connect", False))
+                self.use_logo_connect_checkbox.setChecked(is_connect_enabled)
+                self.logo_connect_database_input.setText(str(logo_settings.get("connect_database", "")))
+                self.logo_connect_database_input.setEnabled(is_connect_enabled)
+                connect_firm = logo_settings.get("connect_firm_no")
+                if connect_firm is not None and str(connect_firm).isdigit():
+                    self.logo_connect_firm_no_input.setValue(int(connect_firm))
+                else:
+                    self.logo_connect_firm_no_input.setValue(int(logo_settings.get("firm_no", 1) or 1))
+                self.logo_connect_firm_no_input.setEnabled(is_connect_enabled)
             elif self.active_connector == "sap":
                 sap_settings = settings_data.get("sap", {})
                 self.sap_host_input.setText(str(sap_settings.get("host", "")))
