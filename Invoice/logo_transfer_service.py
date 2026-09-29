@@ -99,8 +99,9 @@ class LogoTransferService:
             else:
                 failed_results.append(f"{invoice_no}: {message}")
 
-        # Aktarılan faturaları Connect APPROVAL tablosunda otomatik senkronize et
-        if successful_invoices:
+        # Aktarılan faturaları Connect APPROVAL tablosunda otomatik senkronize et (Yalnızca Connect entegrasyonu açıksa)
+        use_connect = bool(self.logo_settings.get("use_logo_connect", False))
+        if use_connect and successful_invoices:
             try:
                 from Invoice.logo_connect_reader import LogoConnectReader
                 reader = LogoConnectReader(self.logo_settings)
@@ -179,8 +180,9 @@ class LogoTransferService:
         if erp_logical_ref <= 0:
             return
 
-        # 1. Tiger DB INVOICE tablosunda EINVOICE ve GUID alanlarını garantiye al
-        if is_e_invoice and guid:
+        # 1. Tiger DB INVOICE tablosunda EINVOICE ve GUID alanlarını garantiye al (Yalnızca Connect açıksa ve e-fatura ise)
+        use_connect = bool(self.logo_settings.get("use_logo_connect", False))
+        if use_connect and (is_e_invoice or guid):
             try:
                 import pyodbc
                 server = str(self.logo_settings.get("server", "")).strip()
@@ -202,7 +204,8 @@ class LogoTransferService:
                     SET EINVOICE = 1,
                         GUID = ?,
                         PROFILE_ID = ?,
-                        ESTATUS = 12
+                        ESTATUS = 12,
+                        EDURATION_TYPE = 0
                     WHERE LOGICALREF = ?
                     """
                     with pyodbc.connect(conn_str, timeout=5) as conn:
@@ -212,8 +215,9 @@ class LogoTransferService:
             except Exception as exc:
                 logger.warning("Tiger INVOICE tablosu post_process güncellenemedi: %s", exc)
 
-        # 2. Connect APPROVAL tablosunda DOCREF ve STATUS=3 güncelle
-        if connect_logical_ref > 0 or (is_e_invoice and doc_no):
+        # 2. Connect APPROVAL tablosunda DOCREF ve STATUS=3 güncelle (Yalnızca Connect entegrasyonu açıksa)
+        use_connect = bool(self.logo_settings.get("use_logo_connect", False))
+        if use_connect and (connect_logical_ref > 0 or (is_e_invoice and doc_no)):
             try:
                 from Invoice.logo_connect_reader import LogoConnectReader
                 reader = LogoConnectReader(self.logo_settings)

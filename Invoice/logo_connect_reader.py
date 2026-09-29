@@ -197,6 +197,7 @@ class LogoConnectReader:
         try:
             with pyodbc.connect(conn_str, timeout=10) as conn:
                 cursor = conn.cursor()
+                updated = False
                 if connect_logicalref > 0:
                     query = f"""
                     UPDATE {table_name}
@@ -206,15 +207,21 @@ class LogoConnectReader:
                     WHERE LOGICALREF = ?
                     """
                     cursor.execute(query, (erp_logicalref, connect_logicalref))
-                elif invoice_no:
+                    try:
+                        if int(cursor.rowcount or 0) > 0:
+                            updated = True
+                    except (TypeError, ValueError):
+                        updated = True
+
+                if not updated and invoice_no:
                     query = f"""
                     UPDATE {table_name}
                     SET DOCREF = ?,
                         STATUS = 3,
                         APPROVED = 0
-                    WHERE DOCNR = ? AND (DOCREF = 0 OR DOCREF IS NULL)
+                    WHERE (DOCNR = ? OR DOCNR = ?) AND (DOCREF = 0 OR DOCREF IS NULL)
                     """
-                    cursor.execute(query, (erp_logicalref, str(invoice_no).strip()))
+                    cursor.execute(query, (erp_logicalref, str(invoice_no).strip(), str(invoice_no).strip().upper()))
                 conn.commit()
                 logger.info(
                     "Connect APPROVAL tablosu güncellendi (Tablo: %s, ConnectRef: %s, FaturaNo: %s, ERPRef: %s, STATUS=3)",

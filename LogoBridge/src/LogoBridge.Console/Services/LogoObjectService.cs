@@ -444,10 +444,15 @@ public sealed class LogoObjectService
                 try { dataObject.DataFields.FieldByName("EINVOICE").Value = (short)1; } catch { }
                 try { dataObject.DataFields.FieldByName("PROFILE_ID").Value = (short)(payload.ProfileId > 0 ? payload.ProfileId : 1); } catch { }
                 try { dataObject.DataFields.FieldByName("ESTATUS").Value = (short)12; } catch { }
+                try { dataObject.DataFields.FieldByName("EDURATION_TYPE").Value = (short)0; } catch { }
                 if (!string.IsNullOrWhiteSpace(payload.Guid))
                 {
                     try { dataObject.DataFields.FieldByName("GUID").Value = payload.Guid; } catch { }
                 }
+            }
+            else
+            {
+                try { dataObject.DataFields.FieldByName("EINVOICE").Value = (short)0; } catch { }
             }
             
             var paymentCode = ReadOptionalPayloadString(payload, "PaymentCode", string.Empty);

@@ -11,6 +11,7 @@ from Common.qt_compat import (
     QMessageBox,
     QPushButton,
     QSpinBox,
+    QTimer,
     QVBoxLayout,
     QWidget,
 )
@@ -60,7 +61,7 @@ class SettingsTab(QWidget):
         self.satta_login_button.clicked.connect(self.handle_satta_login)
         self.connector_test_button.clicked.connect(self.handle_connector_test)
         self.connect_test_button.clicked.connect(self.handle_connect_test)
-        self.save_button.clicked.connect(self.save_settings)
+        self.save_button.clicked.connect(self.handle_save_settings)
 
         self.satta_base_url_input.textChanged.connect(self.on_satta_credentials_changed)
         self.satta_username_input.textChanged.connect(self.on_satta_credentials_changed)
@@ -77,7 +78,15 @@ class SettingsTab(QWidget):
             self.logo_user_password_input.textChanged.connect(self.check_logo_test_button_visibility)
             self.logo_firm_no_input.valueChanged.connect(self.check_logo_test_button_visibility)
             self.logo_period_no_input.valueChanged.connect(self.check_logo_test_button_visibility)
+
+            self.logo_server_input.textChanged.connect(self.update_connect_test_button_visibility)
+            self.logo_database_input.textChanged.connect(self.update_connect_test_button_visibility)
+            self.logo_db_username_input.textChanged.connect(self.update_connect_test_button_visibility)
+            self.logo_db_password_input.textChanged.connect(self.update_connect_test_button_visibility)
+            self.logo_connect_database_input.textChanged.connect(self.update_connect_test_button_visibility)
+            self.logo_connect_firm_no_input.valueChanged.connect(self.update_connect_test_button_visibility)
             self.use_logo_connect_checkbox.toggled.connect(self.update_connect_test_button_visibility)
+
             self.check_logo_test_button_visibility()
             self.update_connect_test_button_visibility()
 
@@ -533,11 +542,18 @@ class SettingsTab(QWidget):
         db_password = self.logo_db_password_input.text()
         connect_firm_no = int(self.logo_connect_firm_no_input.value())
 
-        if not server or not connect_database:
+        missing = []
+        if not server:
+            missing.append("• SQL Server adresi")
+        if not connect_database:
+            missing.append("• Veritabanı adı (Connect DB veya Ana Database)")
+
+        if missing:
             QMessageBox.warning(
                 self,
                 "Eksik Bilgi",
-                "Connect DB bağlantısı için SQL Server ve Veritabanı bilgileri gereklidir."
+                "Logo Connect DB bağlantısını test etmek için aşağıdaki bilgiler gereklidir:\n\n"
+                + "\n".join(missing)
             )
             return
 
@@ -557,7 +573,16 @@ class SettingsTab(QWidget):
                 f"Trusted_Connection=yes;"
             )
 
-        import pyodbc
+        try:
+            import pyodbc
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "Eksik Kütüphane",
+                "Python 'pyodbc' modülü yüklü değil. Veritabanı bağlantısı kurulamaz."
+            )
+            return
+
         table_name = f"LG_{connect_firm_no:03d}_APPROVAL"
         try:
             with pyodbc.connect(conn_str, timeout=5) as conn:
@@ -566,6 +591,30 @@ class SettingsTab(QWidget):
                     cursor.execute(f"SELECT COUNT(*) FROM {table_name} WITH (NOLOCK)")
                     row = cursor.fetchone()
                     count = row[0] if row else 0
+
+                    verified_config = {
+                        "server": server,
+                        "database": main_database,
+                        "connect_database": self.logo_connect_database_input.text().strip(),
+                        "db_username": db_username,
+                        "db_password": db_password,
+                        "connect_firm_no": connect_firm_no,
+                    }
+                    try:
+                        settings_data = self.load_existing_settings()
+                        if "logo" not in settings_data:
+                            settings_data["logo"] = {}
+                        settings_data["logo"]["connect_connection_verified_config"] = verified_config
+                        ensure_parent_directory(self.SETTINGS_FILE)
+                        self.SETTINGS_FILE.write_text(
+                            json.dumps(settings_data, ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
+                    except Exception:
+                        pass
+
+                    self.update_connect_test_button_visibility()
+
                     QMessageBox.information(
                         self,
                         "Connect DB Bağlantısı Başarılı",
@@ -573,27 +622,105 @@ class SettingsTab(QWidget):
                         f"• Sunucu: {server}\n"
                         f"• Veri Tabanı: {connect_database}\n"
                         f"• Tablo: {table_name}\n"
-                        f"• Mevcut Kayıt Sayısı: {count}"
+                        f"• Mevcut Kayıt Sayısı: {count}\n\n"
+                        f"Logo Connect entegrasyonu kullanıma hazır."
                     )
                 except Exception as tbl_err:
+                    tbl_err_str = str(tbl_err)
+                    table_hints = []
+                    if "Invalid object name" in tbl_err_str or "208" in tbl_err_str or "Geçersiz nesne adı" in tbl_err_str:
+                        table_hints.append(f"• '{connect_database}' veritabanında '{table_name}' tablosu bulunamadı.")
+                        table_hints.append(f"• Connect Firma No ({connect_firm_no:03d}) hatalı olabilir. Logo Connect'te tanımlı firma numaranızı kontrol ediniz.")
+                        table_hints.append(f"• Logo Connect tablolarınız ana Tiger veritabanında değil, ayrı bir Connect veritabanında (örn: CONNECT, LGCONNECT) bulunuyor olabilir. 'Connect DB' alanına doğru veritabanı adını yazınız.")
+                        table_hints.append("• İlgili firmanın Logo Connect e-Fatura / Onay modülü tabloları henüz oluşturulmamış veya tabloları açılmamış olabilir.")
+                    else:
+                        table_hints.append(f"• '{table_name}' tablosu sorgulanırken beklenmeyen bir hata oluştu.")
+
+                    table_hint_text = "\n".join(table_hints)
                     QMessageBox.warning(
                         self,
-                        "Tablo Bulunamadı",
-                        f"Veri tabanına başarıyla bağlanıldı fakat '{table_name}' tablosu okunamadı:\n{tbl_err}\n\n"
-                        f"Lütfen Connect Veri Tabanı Adı veya Connect Firma No ({connect_firm_no:03d}) alanını kontrol ediniz."
+                        "Connect Onay Tablosu Bulunamadı",
+                        f"SQL Server ve '{connect_database}' veritabanına başarıyla bağlanıldı,\n"
+                        f"ancak Logo Connect onay tablosu okunamadı!\n\n"
+                        f"🔍 Olası Neden ve Çözüm:\n{table_hint_text}\n\n"
+                        f"📋 Sorgulanan Tablo: {table_name}\n\n"
+                        f"⚠️ Teknik Hata Mesajı:\n{tbl_err_str}"
                     )
         except Exception as exc:
+            err_str = str(exc)
+            hints = []
+            if "18456" in err_str or "Login failed" in err_str or "Giriş başarısız" in err_str:
+                hints.append("• SQL Server kullanıcı adı veya şifresi hatalı.")
+                hints.append("• Lütfen 'DB Kullanıcı' ve 'DB Şifre' alanlarını kontrol ediniz.")
+            elif "4060" in err_str or "Cannot open database" in err_str:
+                hints.append(f"• '{connect_database}' isimli veritabanı SQL Server üzerinde bulunamadı veya kullanıcının bu veritabanına erişim yetkisi yok.")
+                hints.append("• Lütfen 'Connect DB' (veya 'Database') alanına doğru veritabanı adını girdiğinizden emin olunuz.")
+            elif "08001" in err_str or "Server does not exist" in err_str or "timeout" in err_str.lower() or "TCP Provider" in err_str:
+                hints.append(f"• '{server}' sunucusuna ulaşılamadı (zaman aşımı veya ağ bağlantı hatası).")
+                hints.append("• SQL Server servisinin çalıştığından ve sunucu adının/IP adresinin doğru olduğundan emin olunuz.")
+                hints.append("• Port 1433 erişimini ve güvenlik duvarı ayarlarını kontrol ediniz.")
+            elif "driver" in err_str.lower() or "data source name not found" in err_str.lower():
+                hints.append("• Sistemde 'SQL Server' ODBC sürücüsü bulunamadı.")
+                hints.append("• Windows ODBC Veri Kaynakları Yöneticisi üzerinden sürücüyü kontrol ediniz.")
+            else:
+                hints.append("• SQL Server bağlantısı kurulamadı. Sunucu erişim ve güvenlik yetkilerini kontrol ediniz.")
+
+            hint_text = "\n".join(hints)
             QMessageBox.critical(
                 self,
                 "Connect DB Bağlantı Hatası",
-                f"Logo Connect veri tabanına bağlanılamadı:\n{exc}"
+                f"Logo Connect veri tabanına bağlanılamadı!\n\n"
+                f"🔍 Olası Neden ve Çözüm:\n{hint_text}\n\n"
+                f"📋 Bağlantı Parametreleri:\n"
+                f"• Sunucu: {server}\n"
+                f"• Veritabanı: {connect_database}\n"
+                f"• Kullanıcı: {db_username or '(Windows Authentication)'}\n\n"
+                f"⚠️ Teknik Hata Mesajı:\n{err_str}"
             )
 
     def update_connect_test_button_visibility(self) -> None:
-        if self.active_connector == "logo":
-            self.connect_test_button.setVisible(self.use_logo_connect_checkbox.isChecked())
-        else:
+        if self.active_connector != "logo" or not self.use_logo_connect_checkbox.isChecked():
             self.connect_test_button.setVisible(False)
+            return
+
+        settings_data = self.load_existing_settings()
+        logo_settings = settings_data.get("logo", {})
+        verified_config = logo_settings.get("connect_connection_verified_config", {})
+
+        if not verified_config:
+            self.connect_test_button.setVisible(True)
+            return
+
+        current_config = {
+            "server": self.logo_server_input.text().strip(),
+            "database": self.logo_database_input.text().strip(),
+            "connect_database": self.logo_connect_database_input.text().strip(),
+            "db_username": self.logo_db_username_input.text().strip(),
+            "db_password": self.logo_db_password_input.text(),
+            "connect_firm_no": int(self.logo_connect_firm_no_input.value()),
+        }
+
+        is_verified = True
+        for key, val in current_config.items():
+            verified_val = verified_config.get(key)
+            if key == "connect_firm_no":
+                try:
+                    if int(val) != int(verified_val):
+                        is_verified = False
+                        break
+                except (ValueError, TypeError):
+                    is_verified = False
+                    break
+            else:
+                if str(val).strip() != str(verified_val or "").strip():
+                    is_verified = False
+                    break
+
+        effective_db = current_config["connect_database"] or current_config["database"]
+        if is_verified and bool(current_config["server"]) and bool(effective_db):
+            self.connect_test_button.setVisible(False)
+        else:
+            self.connect_test_button.setVisible(True)
 
     def handle_sap_test(self) -> None:
         if not self.sap_host_input.text().strip() or not self.sap_client_input.text().strip():
@@ -712,7 +839,39 @@ class SettingsTab(QWidget):
 
         return {}
 
-    def save_settings(self, show_message: bool = True) -> None:
+    def handle_save_settings(self, *args) -> None:
+        self.save_button.setText("Kaydediliyor...")
+        self.save_button.setEnabled(False)
+        try:
+            success = self.save_settings(show_message=True)
+        finally:
+            self.save_button.setEnabled(True)
+
+        if success:
+            self._set_button_feedback(self.save_button, "✓ Ayarlar Başarıyla Kaydedildi", is_success=True)
+        else:
+            self._set_button_feedback(self.save_button, "✕ Kayıt Başarısız", is_success=False)
+
+    def _set_button_feedback(self, button: QPushButton, text: str, is_success: bool = True) -> None:
+        original_text = "Ayarları Kaydet"
+        original_style = button.styleSheet()
+
+        button.setText(text)
+        if is_success:
+            button.setStyleSheet("background-color: #2e7d32; color: #ffffff; font-weight: bold; border-radius: 4px; padding: 6px 12px;")
+        else:
+            button.setStyleSheet("background-color: #c62828; color: #ffffff; font-weight: bold; border-radius: 4px; padding: 6px 12px;")
+
+        def restore():
+            try:
+                button.setText(original_text)
+                button.setStyleSheet(original_style)
+            except Exception:
+                pass
+
+        QTimer.singleShot(2500, restore)
+
+    def save_settings(self, show_message: bool = True) -> bool:
         settings_data = self.load_existing_settings()
 
         settings_data["satta"] = {
@@ -738,12 +897,24 @@ class SettingsTab(QWidget):
                 json.dumps(settings_data, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-        except OSError as exc:
-            QMessageBox.critical(self, "Kayıt Hatası", f"Ayarlar kaydedilemedi:\n{exc}")
-            return
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Kayıt Hatası",
+                f"Ayarlar kaydedilirken hata oluştu:\n{exc}"
+            )
+            return False
+
+        self.check_logo_test_button_visibility()
+        self.update_connect_test_button_visibility()
 
         if show_message:
-            QMessageBox.information(self, "Ayarlar", "Ayarlar kaydedildi.")
+            QMessageBox.information(
+                self,
+                "Ayarlar Kaydedildi",
+                "Tüm ayarlar başarıyla kaydedildi."
+            )
+        return True
 
     def load_settings(self) -> None:
         self._loading_settings = True
