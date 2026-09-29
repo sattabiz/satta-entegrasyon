@@ -68,9 +68,23 @@ class InvoiceMatcher:
                 display_text="❌ Veri Hatası",
             )
 
-        raw_invoice_no = str(satta_invoice.get("invoice_no") or "").strip()
-        seller_name = str(satta_invoice.get("seller_name") or "").strip()
-        seller_vkn = self.normalize_vkn(str(satta_invoice.get("seller_tax_number") or ""))
+        raw_invoice_no = str(
+            satta_invoice.get("invoice_no") or satta_invoice.get("invoice_number") or ""
+        ).strip()
+        seller_name = str(
+            satta_invoice.get("seller_name")
+            or satta_invoice.get("supplier_name")
+            or satta_invoice.get("company_name")
+            or ""
+        ).strip()
+        seller_vkn = self.normalize_vkn(
+            str(
+                satta_invoice.get("seller_tax_number")
+                or satta_invoice.get("vkn")
+                or satta_invoice.get("tax_number")
+                or ""
+            )
+        )
 
         # Toplam tutarı hesapla
         total_amount = self._calculate_satta_total_amount(satta_invoice)

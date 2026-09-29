@@ -10,18 +10,18 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ConnectInvoiceRecord:
     logical_ref: int
-    invoice_number: str  # 16 haneli GİB Fatura No (DOCNR)
-    ettn_guid: str       # 36 haneli ETTN (REFERENCEID)
-    supplier_vkn: str    # Tedarikçi Vergi No (CLRETAILVKN)
-    supplier_name: str   # Tedarikçi Ünvanı (SENDERTITLE)
-    invoice_date: Optional[datetime]
-    total_amount: float
-    tax_exclusive_total: float
-    tax_total: float
-    profile_id: int      # 1: Temel, 2: Ticari
-    status: int
-    approved: int
-    doc_ref: int         # 0: Bekliyor, >0: ERP Ref
+    invoice_number: str = ""  # 16 haneli GİB Fatura No (DOCNR)
+    ettn_guid: str = ""       # 36 haneli ETTN (REFERENCEID / FILENAME)
+    supplier_vkn: str = ""    # Tedarikçi Vergi No (CLRETAILVKN / SENDER)
+    supplier_name: str = ""   # Tedarikçi Ünvanı (SENDERTITLE)
+    invoice_date: Optional[datetime] = None
+    total_amount: float = 0.0
+    tax_exclusive_total: float = 0.0
+    tax_total: float = 0.0
+    profile_id: int = 1      # 1: Temel, 2: Ticari
+    status: int = 0
+    approved: int = 0
+    doc_ref: int = 0         # 0: Bekliyor, >0: ERP Ref
 
 
 class LogoConnectReader:
@@ -131,34 +131,105 @@ class LogoConnectReader:
 
         return records
 
-    def mark_as_transferred(self, connect_logicalref: int, erp_logicalref: int) -> bool:
+    def auto_sync_transferred_invoices(self, period_no: int = 1) -> int:
         """
-        Fatura Tiger ERP'ye başarıyla kaydedildiğinde Connect APPROVAL tablosundaki DOCREF alanını
-        ERP'deki LOGICALREF ile günceller ve onay durumunu işaretler.
+        Tiger ERP'de kaydı oluşan (INVOICE tablosunda bulunan) fakat Connect APPROVAL
+        tablosunda DOCREF=0 veya boş kalmış e-faturaları otomatik tespit ederek
+        Connect APPROVAL tablosunda DOCREF ve STATUS=3 (Kaydedildi) olarak günceller.
+        Böylece takılı kalmış faturalar kullanıcı müdahalesi olmadan otomatik senkronize olur.
         """
-        if connect_logicalref <= 0 or erp_logicalref <= 0:
-            return False
-
-        table_name = self.get_approval_table_name()
-        query = f"""
-        UPDATE {table_name}
-        SET DOCREF = ?,
-            STATUS = 12,
-            APPROVED = 1
-        WHERE LOGICALREF = ?
-        """
+        approval_table = self.get_approval_table_name()
+        erp_invoice_table = f"LG_{self.firm_no:03d}_{period_no:02d}_INVOICE"
+        if self.connect_database and self.main_database and self.connect_database.lower() != self.main_database.lower():
+            erp_table_full = f"[{self.main_database}].dbo.[{erp_invoice_table}]"
+        else:
+            erp_table_full = f"[{erp_invoice_table}]"
 
         conn_str = self.build_connection_string()
+        query = f"""
+        UPDATE A
+        SET A.DOCREF = I.LOGICALREF,
+            A.STATUS = 3,
+            A.APPROVED = 0
+        FROM [{approval_table}] A
+        INNER JOIN {erp_table_full} I
+           ON (
+               (NULLIF(LTRIM(RTRIM(A.DOCNR)), '') IS NOT NULL AND (A.DOCNR = I.FICHENO OR A.DOCNR = I.DOCTRACKINGNR))
+               OR (NULLIF(LTRIM(RTRIM(A.FILENAME)), '') IS NOT NULL AND A.FILENAME = I.GUID)
+               OR (NULLIF(LTRIM(RTRIM(A.REFERENCEID)), '') IS NOT NULL AND A.REFERENCEID = I.GUID)
+           )
+        WHERE (A.DOCREF = 0 OR A.DOCREF IS NULL)
+          AND ISNULL(A.CANCELLED, 0) = 0
+          AND ISNULL(I.CANCELLED, 0) = 0
+          AND I.LOGICALREF > 0
+        """
         try:
             with pyodbc.connect(conn_str, timeout=10) as conn:
                 cursor = conn.cursor()
-                cursor.execute(query, (erp_logicalref, connect_logicalref))
+                cursor.execute(query)
+                updated_count = cursor.rowcount
                 conn.commit()
+                if updated_count > 0:
+                    logger.info("Connect APPROVAL otomatik senkronize edildi: %s adet fatura bağlandı.", updated_count)
+                return max(0, updated_count)
+        except Exception as exc:
+            logger.debug("Otomatik Connect senkronizasyonu çalıştırılamadı: %s", exc)
+            return 0
+
+    def mark_as_transferred(
+        self,
+        connect_logicalref: int,
+        erp_logicalref: int,
+        invoice_no: str = "",
+    ) -> bool:
+        """
+        Fatura Tiger ERP'ye başarıyla kaydedildiğinde Connect APPROVAL tablosundaki:
+        - DOCREF alanını ERP'deki LOGICALREF ile günceller
+        - STATUS alanını 3 (Kaydedildi / ERP'ye Aktarıldı) olarak günceller
+        - APPROVED alanını 0 olarak bırakır (Logo Connect standardı)
+        """
+        if erp_logicalref <= 0 or (connect_logicalref <= 0 and not invoice_no):
+            return False
+
+        table_name = self.get_approval_table_name()
+        conn_str = self.build_connection_string()
+
+        try:
+            with pyodbc.connect(conn_str, timeout=10) as conn:
+                cursor = conn.cursor()
+                if connect_logicalref > 0:
+                    query = f"""
+                    UPDATE {table_name}
+                    SET DOCREF = ?,
+                        STATUS = 3,
+                        APPROVED = 0
+                    WHERE LOGICALREF = ?
+                    """
+                    cursor.execute(query, (erp_logicalref, connect_logicalref))
+                elif invoice_no:
+                    query = f"""
+                    UPDATE {table_name}
+                    SET DOCREF = ?,
+                        STATUS = 3,
+                        APPROVED = 0
+                    WHERE DOCNR = ? AND (DOCREF = 0 OR DOCREF IS NULL)
+                    """
+                    cursor.execute(query, (erp_logicalref, str(invoice_no).strip()))
+                conn.commit()
+                logger.info(
+                    "Connect APPROVAL tablosu güncellendi (Tablo: %s, ConnectRef: %s, FaturaNo: %s, ERPRef: %s, STATUS=3)",
+                    table_name,
+                    connect_logicalref,
+                    invoice_no,
+                    erp_logicalref,
+                )
                 return True
         except Exception as exc:
             logger.warning(
-                "Connect APPROVAL tablosu güncellenemedi (ConnectRef: %s, ERPRef: %s): %s",
+                "Connect APPROVAL tablosu güncellenemedi (Tablo: %s, ConnectRef: %s, FaturaNo: %s, ERPRef: %s): %s",
+                table_name,
                 connect_logicalref,
+                invoice_no,
                 erp_logicalref,
                 exc,
             )

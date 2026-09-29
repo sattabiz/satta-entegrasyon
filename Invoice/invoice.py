@@ -493,6 +493,11 @@ class InvoiceTransferTab(QWidget):
                     from Invoice.invoice_matcher import InvoiceMatcher
 
                     connect_reader = LogoConnectReader(logo_settings)
+                    try:
+                        period_no = int(logo_settings.get("period_no", 1) or 1)
+                        connect_reader.auto_sync_transferred_invoices(period_no=period_no)
+                    except Exception:
+                        pass
                     connect_records = connect_reader.fetch_untransferred_invoices()
                     matcher = InvoiceMatcher(connect_records)
 
