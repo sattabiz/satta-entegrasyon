@@ -1,6 +1,14 @@
 #define MyAppName "Satta Entegrasyon"
 #define MyAppExeName "SattaEntegrasyon.exe"
-#define MyAppVersion "1.2.8"
+
+#if FileExists("version.iss")
+  #include "version.iss"
+#endif
+
+#ifndef MyAppVersion
+  #define MyAppVersion "1.2.8"
+#endif
+
 #define MyAppPublisher "Satta"
 #define MyAppDirName "SattaEntegrasyon"
 #define MyOutputBaseFilename "SattaEntegrasyon-Setup"
@@ -13,6 +21,7 @@ DefaultDirName={autopf}\Satta\{#MyAppDirName}
 DefaultGroupName={#MyAppName}
 OutputDir=Output
 OutputBaseFilename={#MyOutputBaseFilename}
+SetupIconFile=..\App_Icons\exeIcon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

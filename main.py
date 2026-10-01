@@ -43,7 +43,8 @@ class MainWindow(QMainWindow):
         window_icon_path = project_path("App_Icons", "exeIcon.ico")
         if window_icon_path.exists():
             self.setWindowIcon(QIcon(str(window_icon_path)))
-        self.resize(1000, 700)
+        self.resize(1250, 750)
+        self.setMinimumSize(1000, 650)
 
         self.tabs = QTabWidget()
 
