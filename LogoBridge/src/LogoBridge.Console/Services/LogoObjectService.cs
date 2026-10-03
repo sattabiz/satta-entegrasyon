@@ -533,7 +533,6 @@ public sealed class LogoObjectService
                 try { currentLine.FillDefaults(); } catch { }
                 currentLine.FieldByName("QUANTITY").Value = (double)(line.Quantity > 0 ? line.Quantity : 1.0m);
                 currentLine.FieldByName("PRICE").Value = (double)line.UnitPrice;
-                currentLine.FieldByName("TOTAL").Value = (double)line.Total;
                 
                 currentLine.FieldByName("VAT_RATE").Value = (double)(line.VatRate >= 0 ? line.VatRate : 0m);
                 if (!string.IsNullOrWhiteSpace(line.UnitCode))

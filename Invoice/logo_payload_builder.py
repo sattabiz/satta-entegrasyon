@@ -106,7 +106,6 @@ class LogoPayloadBuilder:
                 foreign_price = 0.0
 
             vat_rate = self._to_float(product.get("applied_vat_rate"))
-            total = self._to_float(product.get("line_total_without_tax"))
             
             product_category_type = str(product.get("category_type")).lower().strip()
             is_service = product_category_type == "service"
@@ -121,7 +120,6 @@ class LogoPayloadBuilder:
                 "unit_price": unit_price,
                 "foreign_currency_price": foreign_price,
                 "vat_rate": vat_rate,
-                "total": total,
                 "currency_code": line_currency_code,
                 "exchange_rate": currency_rate,
                 "currency_id": currency_id,
