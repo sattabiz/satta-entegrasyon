@@ -12,7 +12,6 @@ class LogoPayloadBuilder:
 
         invoice_id = self._to_int(invoice.get("invoice_id"))
         invoice_no = self._safe_text(invoice.get("invoice_no"))
-        seller_erp_id = self._safe_text(invoice.get("seller_erp_id"))
         invoice_date = self._format_datetime(invoice.get("invoice_date"))
         payment_date = self._format_datetime(invoice.get("payment_date"))
         invoice_note = self._safe_text(invoice.get("note"))
@@ -22,6 +21,9 @@ class LogoPayloadBuilder:
 
         if not invoice_no:
             raise ValueError("invoice_no bulunamadı.")
+
+        currency_code = self._resolve_invoice_currency(invoice)
+        seller_erp_id = self._resolve_arp_code(invoice, currency_code)
 
         if not seller_erp_id:
             raise ValueError("seller_erp_id bulunamadı. Cari hesap eşlemesi yapılamaz.")
@@ -60,9 +62,9 @@ class LogoPayloadBuilder:
             "source_index": self._to_int(self.logo_settings.get("source_index"), default=0),
             "factory_nr": self._to_int(self.logo_settings.get("factory_nr"), default=0),
             "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=0),
-            "currency_code": self._resolve_invoice_currency(invoice),
+            "currency_code": currency_code,
             "exchange_rate": self._resolve_exchange_rate(invoice),
-            "transaction_currency_id": self._resolve_currency_id(self._resolve_invoice_currency(invoice)),
+            "transaction_currency_id": self._resolve_currency_id(currency_code),
             "transaction_currency_rate": self._resolve_exchange_rate(invoice),
             "usd_rate": self._resolve_line_exchange_rate(invoice, "USD"),
             "notes": self._build_notes(invoice_id, payment_date, invoice_note),
@@ -112,12 +114,13 @@ class LogoPayloadBuilder:
                 # Logo'da PRICE = Yerel Para Birimi (TL) birim fiyatı
                 # Logo'da FC_PRICE / EDT_PRICE / PC_PRICE = İşlem Dövizi (EUR/USD vb.) birim fiyatı
                 unit_price = derived_tl_price
-                if raw_price > 0:
+                orig_prod_curr = self._safe_text(product.get("currency_code")).upper()
+                if raw_price > 0 and (orig_prod_curr == line_currency_code or not orig_prod_curr):
                     foreign_price = raw_price
                 elif currency_rate > 0 and unit_price > 0:
                     foreign_price = round(unit_price / currency_rate, 6)
                 else:
-                    foreign_price = 0.0
+                    foreign_price = raw_price
             else:
                 # TL fatura:
                 unit_price = derived_tl_price
@@ -176,7 +179,22 @@ class LogoPayloadBuilder:
 
         return ""
 
+    def _resolve_arp_code(self, invoice: Dict[str, Any], currency_code: str) -> str:
+        seller_erp_id = self._safe_text(invoice.get("seller_erp_id"))
+        normalized_currency = self._safe_text(currency_code).upper()
+        if normalized_currency in ("TRY", "TL"):
+            for suffix in [".€", ".$", ".£", ".EUR", ".USD", ".GBP"]:
+                if seller_erp_id.upper().endswith(suffix.upper()):
+                    return seller_erp_id[:-len(suffix)].strip()
+        return seller_erp_id
+
     def _resolve_invoice_currency(self, invoice: Dict[str, Any]) -> str:
+        manual_currency = self._safe_text(invoice.get("selected_currency") or invoice.get("manual_currency_code")).upper()
+        if manual_currency:
+            if manual_currency == "TL":
+                return "TRY"
+            return manual_currency
+
         seller_erp_id = self._safe_text(invoice.get("seller_erp_id")).upper()
         if seller_erp_id.endswith(".€"):
             return "EUR"
@@ -190,7 +208,7 @@ class LogoPayloadBuilder:
             if not isinstance(product, dict):
                 continue
             currency_code = self._safe_text(product.get("currency_code"))
-            if currency_code and currency_code.upper() != "TRY":
+            if currency_code and currency_code.upper() not in ("TRY", "TL"):
                 return currency_code
         return "TRY"
 
