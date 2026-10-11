@@ -518,29 +518,38 @@ class InvoiceTransferTab(QWidget):
             parent = parent.parentWidget()
 
     def get_available_currencies(self, raw_invoice=None, default_currency=""):
-        base_currencies = ["TRY", "USD", "EUR", "GBP"]
+        base_currencies = ["TRY", "USD", "EUR", "GBP", "CHF"]
         result = list(base_currencies)
 
         if default_currency:
-            norm_def = self._safe_text(default_currency).upper()
-            if norm_def == "TL":
+            norm_def = self._safe_text(default_currency)
+            if norm_def.upper() == "TL":
                 norm_def = "TRY"
-            if norm_def and norm_def not in result:
+            elif norm_def.upper() in ("FR", "CHF"):
+                norm_def = "CHF"
+            found = any(existing.upper() == norm_def.upper() for existing in result)
+            if not found and norm_def:
                 result.append(norm_def)
 
         if raw_invoice and isinstance(raw_invoice, dict):
             rates = raw_invoice.get("currency_rates") or {}
             if isinstance(rates, dict):
                 for c in rates.keys():
-                    c_up = self._safe_text(c).upper()
-                    if c_up and c_up not in result:
-                        result.append(c_up)
+                    c_clean = self._safe_text(c)
+                    if c_clean.upper() in ("FR", "CHF"):
+                        c_clean = "CHF"
+                    found = any(existing.upper() == c_clean.upper() for existing in result)
+                    if not found and c_clean:
+                        result.append(c_clean)
 
             for p in raw_invoice.get("products") or []:
                 if isinstance(p, dict):
-                    c_up = self._safe_text(p.get("currency_code")).upper()
-                    if c_up and c_up not in result:
-                        result.append(c_up)
+                    c_clean = self._safe_text(p.get("currency_code"))
+                    if c_clean.upper() in ("FR", "CHF"):
+                        c_clean = "CHF"
+                    found = any(existing.upper() == c_clean.upper() for existing in result)
+                    if not found and c_clean:
+                        result.append(c_clean)
 
         return result
 
@@ -568,15 +577,30 @@ class InvoiceTransferTab(QWidget):
                 orig_currency = "USD"
             elif seller_erp_id.endswith(".£"):
                 orig_currency = "GBP"
+            elif seller_erp_id.endswith(".FR") or seller_erp_id.endswith(".CHF"):
+                orig_currency = "CHF"
             else:
                 orig_currency = "TRY"
+        elif orig_currency.upper() in ("FR", "CHF"):
+            orig_currency = "CHF"
 
         orig_without_vat = self._to_float(raw_invoice.get("price_without_vat"))
         orig_vat_total = self._to_float(raw_invoice.get("invoice_vat_total"))
         orig_with_vat = orig_without_vat + orig_vat_total
         total_tl = self._to_float(raw_invoice.get("total_tl_price"))
         currency_rates = raw_invoice.get("currency_rates") or {}
-        orig_rate = self._to_float(currency_rates.get(orig_currency)) if isinstance(currency_rates, dict) else 0.0
+        
+        orig_rate = 0.0
+        if isinstance(currency_rates, dict):
+            candidates = [orig_currency]
+            if orig_currency.upper() in ("FR", "CHF"):
+                candidates.extend(["CHF", "chf", "Fr", "FR"])
+            for cand in candidates:
+                if cand in currency_rates and currency_rates[cand] is not None:
+                    r = self._to_float(currency_rates.get(cand))
+                    if r > 0:
+                        orig_rate = r
+                        break
 
         tl_without_tax = sum(self._to_float(p.get("line_total_without_tax")) for p in products if isinstance(p, dict))
         if tl_without_tax <= 0:
@@ -595,12 +619,23 @@ class InvoiceTransferTab(QWidget):
             disp_without_vat = tl_without_tax
             disp_with_vat = total_tl
             disp_total = total_tl
-        elif target_curr == orig_currency:
+        elif target_curr == orig_currency or (target_curr in ("FR", "CHF") and orig_currency.upper() in ("FR", "CHF")):
             disp_without_vat = orig_without_vat
             disp_with_vat = orig_with_vat
             disp_total = total_tl
         else:
-            target_rate = self._to_float(currency_rates.get(target_curr)) if isinstance(currency_rates, dict) else 0.0
+            target_rate = 0.0
+            if isinstance(currency_rates, dict):
+                candidates = [target_curr]
+                if target_curr in ("FR", "CHF"):
+                    candidates.extend(["CHF", "chf", "Fr", "FR"])
+                for cand in candidates:
+                    if cand in currency_rates and currency_rates[cand] is not None:
+                        r = self._to_float(currency_rates.get(cand))
+                        if r > 0:
+                            target_rate = r
+                            break
+
             if target_rate > 0:
                 disp_without_vat = tl_without_tax / target_rate
                 disp_with_vat = total_tl / target_rate
@@ -641,12 +676,16 @@ class InvoiceTransferTab(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 self.invoice_table.setItem(row_index, col_index, item)
 
-            raw_currency = str(row_data[4]).strip().upper() if len(row_data) > 4 else ""
-            if raw_currency == "TL":
+            raw_currency = str(row_data[4]).strip() if len(row_data) > 4 else ""
+            if raw_currency.upper() == "TL":
                 raw_currency = "TRY"
+            elif raw_currency.upper() in ("FR", "CHF"):
+                raw_currency = "CHF"
 
             if raw_invoice and "selected_currency" in raw_invoice:
-                selected_curr = str(raw_invoice["selected_currency"]).upper()
+                selected_curr = str(raw_invoice["selected_currency"]).strip()
+                if selected_curr.upper() in ("FR", "CHF"):
+                    selected_curr = "CHF"
             else:
                 selected_curr = raw_currency if raw_currency else "TRY"
                 if raw_invoice:
@@ -672,7 +711,11 @@ class InvoiceTransferTab(QWidget):
                 currency_combo.addItem(curr)
 
             currency_combo.blockSignals(True)
-            idx = currency_combo.findText(selected_curr)
+            idx = -1
+            for i in range(currency_combo.count()):
+                if currency_combo.itemText(i).upper() == selected_curr.upper():
+                    idx = i
+                    break
             if idx >= 0:
                 currency_combo.setCurrentIndex(idx)
             else:
@@ -711,9 +754,11 @@ class InvoiceTransferTab(QWidget):
         if invoice_id is None or not combo:
             return
 
-        new_currency = combo.currentText().strip().upper()
+        new_currency = combo.currentText().strip()
         if not new_currency:
             return
+        if new_currency.upper() in ("FR", "CHF"):
+            new_currency = "CHF"
 
         raw_invoice = self.invoice_raw_map.get(invoice_id)
         if not raw_invoice or not isinstance(raw_invoice, dict):
@@ -921,9 +966,20 @@ class InvoiceTransferTab(QWidget):
                         disp_price = raw_price
                 elif selected_curr:
                     rates = raw_invoice.get("currency_rates") or {}
-                    target_rate = self._to_float(rates.get(selected_curr)) if isinstance(rates, dict) else 0.0
+                    candidates = [selected_curr]
+                    if selected_curr in ("FR", "CHF"):
+                        candidates.extend(["CHF", "chf", "Fr", "FR"])
+                    target_rate = 0.0
+                    if isinstance(rates, dict):
+                        for cand in candidates:
+                            if cand in rates and rates[cand] is not None:
+                                r = self._to_float(rates.get(cand))
+                                if r > 0:
+                                    target_rate = r
+                                    break
+
                     orig_prod_curr = self._safe_text(product.get("currency_code")).upper()
-                    if orig_prod_curr == selected_curr or not orig_prod_curr:
+                    if orig_prod_curr == selected_curr or (orig_prod_curr in ("FR", "CHF") and selected_curr in ("FR", "CHF")) or not orig_prod_curr:
                         disp_price = raw_price
                     elif target_rate > 0 and line_total > 0 and qty > 0:
                         disp_price = (line_total / qty) / target_rate

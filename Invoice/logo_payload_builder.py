@@ -183,7 +183,7 @@ class LogoPayloadBuilder:
         seller_erp_id = self._safe_text(invoice.get("seller_erp_id"))
         normalized_currency = self._safe_text(currency_code).upper()
         if normalized_currency in ("TRY", "TL"):
-            for suffix in [".€", ".$", ".£", ".EUR", ".USD", ".GBP"]:
+            for suffix in [".€", ".$", ".£", ".EUR", ".USD", ".GBP", ".FR", ".CHF"]:
                 if seller_erp_id.upper().endswith(suffix.upper()):
                     return seller_erp_id[:-len(suffix)].strip()
         return seller_erp_id
@@ -193,6 +193,8 @@ class LogoPayloadBuilder:
         if manual_currency:
             if manual_currency == "TL":
                 return "TRY"
+            if manual_currency in ("FR", "CHF"):
+                return "CHF"
             return manual_currency
 
         seller_erp_id = self._safe_text(invoice.get("seller_erp_id")).upper()
@@ -202,12 +204,16 @@ class LogoPayloadBuilder:
             return "USD"
         if seller_erp_id.endswith(".£"):
             return "GBP"
+        if seller_erp_id.endswith(".FR") or seller_erp_id.endswith(".CHF"):
+            return "CHF"
 
         products = invoice.get("products") or []
         for product in products:
             if not isinstance(product, dict):
                 continue
             currency_code = self._safe_text(product.get("currency_code"))
+            if currency_code and currency_code.upper() in ("FR", "CHF"):
+                return "CHF"
             if currency_code and currency_code.upper() not in ("TRY", "TL"):
                 return currency_code
         return "TRY"
@@ -221,6 +227,7 @@ class LogoPayloadBuilder:
             "EUR": 20,
             "GBP": 17,
             "CHF": 11,
+            "FR": 11,
             "CAD": 19,
             "RUB": 58,
             "JPY": 18
@@ -233,14 +240,24 @@ class LogoPayloadBuilder:
 
     def _resolve_line_exchange_rate(self, invoice: Dict[str, Any], currency_code: str) -> float:
         normalized_currency = self._safe_text(currency_code, default="TRY").upper()
-        if not normalized_currency or normalized_currency == "TRY":
+        if not normalized_currency or normalized_currency in ("TRY", "TL"):
             return 0.0
 
         currency_rates = invoice.get("currency_rates") or {}
         if not isinstance(currency_rates, dict):
             return 0.0
 
-        return self._to_float(currency_rates.get(normalized_currency), default=0.0)
+        candidates = [currency_code, normalized_currency]
+        if normalized_currency in ("FR", "CHF"):
+            candidates.extend(["Fr", "FR", "CHF", "chf"])
+
+        for cand in candidates:
+            if cand in currency_rates and currency_rates[cand] is not None:
+                rate = self._to_float(currency_rates.get(cand), default=0.0)
+                if rate > 0:
+                    return rate
+
+        return 0.0
 
     def _resolve_logo_working_year(self, invoice: Dict[str, Any]) -> str:
         configured_year = self._safe_text(self.logo_settings.get("logo_working_year"))
