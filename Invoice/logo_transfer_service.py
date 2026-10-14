@@ -99,16 +99,6 @@ class LogoTransferService:
             else:
                 failed_results.append(f"{invoice_no}: {message}")
 
-        # Aktarılan faturaları Connect APPROVAL tablosunda otomatik senkronize et (Yalnızca Connect entegrasyonu açıksa)
-        use_connect = bool(self.logo_settings.get("use_logo_connect", False))
-        if use_connect and successful_invoices:
-            try:
-                from Invoice.logo_connect_reader import LogoConnectReader
-                reader = LogoConnectReader(self.logo_settings)
-                period_no = self._to_int(self.logo_settings.get("period_no")) or 1
-                reader.auto_sync_transferred_invoices(period_no=period_no)
-            except Exception as sync_exc:
-                logger.debug("Toplu aktarım sonrası Connect otomatik senkronizasyon hatası: %s", sync_exc)
 
         return {
             "successful_invoices": successful_invoices,
@@ -214,21 +204,6 @@ class LogoTransferService:
                         conn.commit()
             except Exception as exc:
                 logger.warning("Tiger INVOICE tablosu post_process güncellenemedi: %s", exc)
-
-        # 2. Connect APPROVAL tablosunda DOCREF ve STATUS=3 güncelle (Yalnızca Connect entegrasyonu açıksa)
-        use_connect = bool(self.logo_settings.get("use_logo_connect", False))
-        if use_connect and (connect_logical_ref > 0 or (is_e_invoice and doc_no)):
-            try:
-                from Invoice.logo_connect_reader import LogoConnectReader
-                reader = LogoConnectReader(self.logo_settings)
-                success = reader.mark_as_transferred(connect_logical_ref, erp_logical_ref, doc_no)
-                if not success:
-                    logger.warning(
-                        "Connect APPROVAL tablosu güncellenemedi (ConnectRef: %s, FaturaNo: %s, ERPRef: %s)",
-                        connect_logical_ref, doc_no, erp_logical_ref
-                    )
-            except Exception as exc:
-                logger.warning("Connect APPROVAL post_process hatası: %s", exc)
 
     @staticmethod
     def _safe_text(value: Any, default: str = "") -> str:

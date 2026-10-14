@@ -80,7 +80,7 @@ class TestLogoConnectIntegration(unittest.TestCase):
         self.assertEqual(res.match_type, "VKN_AMOUNT")
         self.assertEqual(res.display_text, "✓ E-Fatura (ADN2026000002748)")
 
-    def test_logo_connect_reader_sql_and_mark_as_transferred(self):
+    def test_logo_connect_reader_sql_is_strictly_read_only(self):
         logo_settings = {
             "firm_no": 11,
             "period_no": 1,
@@ -90,53 +90,24 @@ class TestLogoConnectIntegration(unittest.TestCase):
         }
         reader = LogoConnectReader(logo_settings)
         self.assertEqual(reader.get_approval_table_name(), "LG_011_APPROVAL")
+        self.assertFalse(hasattr(reader, "mark_as_transferred"))
+        self.assertFalse(hasattr(reader, "auto_sync_transferred_invoices"))
 
         with patch("pyodbc.connect") as mock_conn:
             mock_cursor = MagicMock()
+            mock_cursor.fetchall.return_value = []
             mock_conn.return_value.__enter__.return_value.cursor.return_value = mock_cursor
 
-            # 1. By connect_logicalref
-            success = reader.mark_as_transferred(connect_logicalref=94421, erp_logicalref=29930)
-            self.assertTrue(success)
+            records = reader.fetch_untransferred_invoices()
+            self.assertEqual(records, [])
             executed_sql = mock_cursor.execute.call_args[0][0]
-            params = mock_cursor.execute.call_args[0][1]
-            self.assertIn("UPDATE LG_011_APPROVAL", executed_sql)
-            self.assertIn("STATUS = 3", executed_sql)
-            self.assertIn("APPROVED = 0", executed_sql)
-            self.assertEqual(params, (29930, 94421))
+            self.assertIn("SELECT", executed_sql)
+            self.assertIn("FROM LG_011_APPROVAL WITH (NOLOCK)", executed_sql)
+            self.assertNotIn("UPDATE", executed_sql)
+            self.assertNotIn("INSERT", executed_sql)
+            self.assertNotIn("DELETE", executed_sql)
 
-            # 2. By invoice_no fallback
-            success2 = reader.mark_as_transferred(connect_logicalref=0, erp_logicalref=29930, invoice_no="ADN2026000002748")
-            self.assertTrue(success2)
-            executed_sql2 = mock_cursor.execute.call_args[0][0]
-            params2 = mock_cursor.execute.call_args[0][1]
-            self.assertIn("DOCNR = ?", executed_sql2)
-            self.assertEqual(params2, (29930, "ADN2026000002748", "ADN2026000002748"))
-
-    def test_auto_sync_transferred_invoices_query(self):
-        logo_settings = {
-            "firm_no": 11,
-            "period_no": 1,
-            "server": "localhost",
-            "database": "TIGERDB",
-            "connect_database": "CONNECTDB",
-        }
-        reader = LogoConnectReader(logo_settings)
-
-        with patch("pyodbc.connect") as mock_conn:
-            mock_cursor = MagicMock()
-            mock_cursor.rowcount = 2
-            mock_conn.return_value.__enter__.return_value.cursor.return_value = mock_cursor
-
-            synced = reader.auto_sync_transferred_invoices(period_no=1)
-            self.assertEqual(synced, 2)
-            executed_sql = mock_cursor.execute.call_args[0][0]
-            self.assertIn("UPDATE A", executed_sql)
-            self.assertIn("A.STATUS = 3", executed_sql)
-            self.assertIn("[LG_011_APPROVAL] A", executed_sql)
-            self.assertIn("[TIGERDB].dbo.[LG_011_01_INVOICE]", executed_sql)
-
-    def test_post_process_einvoice(self):
+    def test_post_process_einvoice_only_updates_erp_never_connect(self):
         logo_settings = {
             "firm_no": 11,
             "period_no": 1,
@@ -146,46 +117,23 @@ class TestLogoConnectIntegration(unittest.TestCase):
         }
         service = LogoTransferService(logo_settings)
 
-        with patch("Invoice.logo_connect_reader.LogoConnectReader.mark_as_transferred") as mock_mark:
-            with patch("pyodbc.connect"):
-                mock_mark.return_value = True
-                details = {
-                    "is_e_invoice": True,
-                    "guid": self.valid_guid,
-                    "connect_logical_ref": 94421,
-                    "invoice_number": "ADN2026000002748",
-                }
-                service._post_process_einvoice(
-                    erp_logical_ref=29930,
-                    details=details,
-                    invoice_no="ADN2026000002748",
-                )
-                mock_mark.assert_called_once_with(94421, 29930, "ADN2026000002748")
-
-    def test_post_process_einvoice_skipped_when_connect_disabled(self):
-        logo_settings = {
-            "firm_no": 11,
-            "period_no": 1,
-            "server": "localhost",
-            "database": "TIGERDB",
-            "use_logo_connect": False,
-        }
-        service = LogoTransferService(logo_settings)
-
-        with patch("Invoice.logo_connect_reader.LogoConnectReader.mark_as_transferred") as mock_mark:
-            with patch("pyodbc.connect"):
-                details = {
-                    "is_e_invoice": True,
-                    "guid": self.valid_guid,
-                    "connect_logical_ref": 94421,
-                    "invoice_number": "ADN2026000002748",
-                }
-                service._post_process_einvoice(
-                    erp_logical_ref=29930,
-                    details=details,
-                    invoice_no="ADN2026000002748",
-                )
-                mock_mark.assert_not_called()
+        with patch("pyodbc.connect") as mock_conn:
+            mock_cursor = MagicMock()
+            mock_conn.return_value.__enter__.return_value.cursor.return_value = mock_cursor
+            details = {
+                "is_e_invoice": True,
+                "guid": self.valid_guid,
+                "connect_logical_ref": 94421,
+                "invoice_number": "ADN2026000002748",
+            }
+            service._post_process_einvoice(
+                erp_logical_ref=29930,
+                details=details,
+                invoice_no="ADN2026000002748",
+            )
+            executed_sql = mock_cursor.execute.call_args[0][0]
+            self.assertIn("UPDATE LG_011_01_INVOICE", executed_sql)
+            self.assertNotIn("APPROVAL", executed_sql)
 
     def test_logo_payload_builder_einvoice_setting(self):
         from Invoice.logo_payload_builder import LogoPayloadBuilder
