@@ -122,7 +122,7 @@ DEFAULT_RUNTIME_FILES = {
             "period_no": 1,
             "use_logo_connect": False,
             "connect_database": "",
-            "connect_firm_no": 1,
+            "connect_firm_no": "1",
         },
         "sap": {
             "host": "",

@@ -102,5 +102,50 @@ class TestSettingsConnectButton(unittest.TestCase):
             self.assertIn("✕ Kayıt Başarısız", self.tab.save_button.text())
 
 
+    def test_connect_firm_no_string_handling(self):
+        # 1. Test typing string like 223_01
+        self.tab.logo_connect_firm_no_input.setText("223_01")
+        self.assertEqual(self.tab.logo_connect_firm_no_input.text(), "223_01")
+        self.assertEqual(self.tab.logo_connect_firm_no_input.value(), "223_01")
+
+        # 2. Test collect_active_connector_settings
+        collected = self.tab.collect_active_connector_settings()
+        self.assertEqual(collected["connect_firm_no"], "223_01")
+
+        # 3. Test load_settings with string value
+        with patch.object(self.tab, "load_existing_settings", return_value={"logo": {"connect_firm_no": "223_01", "firm_no": 1}}):
+            self.tab.load_settings()
+            self.assertEqual(self.tab.logo_connect_firm_no_input.text(), "223_01")
+
+        # 4. Test verified config with string
+        self.tab.use_logo_connect_checkbox.setChecked(True)
+        self.tab.logo_server_input.setText("192.168.1.50")
+        self.tab.logo_database_input.setText("TIGERDB")
+        self.tab.logo_connect_database_input.setText("CONNECTDB")
+        self.tab.logo_db_username_input.setText("sa")
+        self.tab.logo_db_password_input.setText("Secret123")
+        self.tab.logo_connect_firm_no_input.setText("223_01")
+
+        verified = {
+            "server": "192.168.1.50",
+            "database": "TIGERDB",
+            "connect_database": "CONNECTDB",
+            "db_username": "sa",
+            "db_password": "Secret123",
+            "connect_firm_no": "223_01",
+        }
+        with patch.object(self.tab, "load_existing_settings", return_value={"logo": {"connect_connection_verified_config": verified}}):
+            self.tab.update_connect_test_button_visibility()
+            self.assertTrue(self.tab.connect_test_button.isHidden())
+
+            # Change connect_firm_no to another value
+            self.tab.logo_connect_firm_no_input.setText("223_02")
+            self.assertFalse(self.tab.connect_test_button.isHidden())
+
+            # Revert connect_firm_no
+            self.tab.logo_connect_firm_no_input.setText("223_01")
+            self.assertTrue(self.tab.connect_test_button.isHidden())
+
+
 if __name__ == "__main__":
     unittest.main()

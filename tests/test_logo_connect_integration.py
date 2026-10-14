@@ -191,6 +191,38 @@ class TestLogoConnectIntegration(unittest.TestCase):
             self.assertEqual(tab.invoice_table.horizontalHeaderItem(2).text(), "Cari")
 
 
+    def test_logo_connect_reader_with_string_connect_firm_no(self):
+        from Invoice.logo_connect_reader import format_connect_table_name
+
+        # Test helper function
+        self.assertEqual(format_connect_table_name("223_01"), "LG_223_01_APPROVAL")
+        self.assertEqual(format_connect_table_name("1"), "LG_001_APPROVAL")
+        self.assertEqual(format_connect_table_name(1), "LG_001_APPROVAL")
+        self.assertEqual(format_connect_table_name("11"), "LG_011_APPROVAL")
+        self.assertEqual(format_connect_table_name("LG_223_01_APPROVAL"), "LG_223_01_APPROVAL")
+        self.assertEqual(format_connect_table_name("LG_001_APPROVAL"), "LG_001_APPROVAL")
+
+        # Test LogoConnectReader with 223_01
+        logo_settings = {
+            "firm_no": 1,
+            "connect_firm_no": "223_01",
+            "server": "localhost",
+            "database": "TIGERDB",
+        }
+        reader = LogoConnectReader(logo_settings)
+        self.assertEqual(reader.get_approval_table_name(), "LG_223_01_APPROVAL")
+
+        with patch("pyodbc.connect") as mock_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchall.return_value = []
+            mock_conn.return_value.__enter__.return_value.cursor.return_value = mock_cursor
+
+            records = reader.fetch_untransferred_invoices()
+            self.assertEqual(records, [])
+            executed_sql = mock_cursor.execute.call_args[0][0]
+            self.assertIn("FROM LG_223_01_APPROVAL WITH (NOLOCK)", executed_sql)
+
+
 if __name__ == "__main__":
     unittest.main()
 

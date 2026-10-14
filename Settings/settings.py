@@ -17,6 +17,7 @@ from Common.qt_compat import (
 )
 
 from Invoice.get_invoice import SattaInvoiceConfig, SattaInvoiceConnector, is_token_expired
+from Invoice.logo_connect_reader import format_connect_table_name
 from Common.path_helper import ensure_parent_directory, user_data_path
 
 
@@ -84,7 +85,7 @@ class SettingsTab(QWidget):
             self.logo_db_username_input.textChanged.connect(self.update_connect_test_button_visibility)
             self.logo_db_password_input.textChanged.connect(self.update_connect_test_button_visibility)
             self.logo_connect_database_input.textChanged.connect(self.update_connect_test_button_visibility)
-            self.logo_connect_firm_no_input.valueChanged.connect(self.update_connect_test_button_visibility)
+            self.logo_connect_firm_no_input.textChanged.connect(self.update_connect_test_button_visibility)
             self.use_logo_connect_checkbox.toggled.connect(self.update_connect_test_button_visibility)
             self.use_logo_connect_checkbox.toggled.connect(self.update_logo_connect_fields_visibility)
 
@@ -246,9 +247,11 @@ class SettingsTab(QWidget):
         self.logo_connect_database_input = QLineEdit()
         self.logo_connect_database_input.setPlaceholderText("Connect DB Adı (Boş ise ana DB kullanılır)")
 
-        self.logo_connect_firm_no_input = QSpinBox()
-        self.logo_connect_firm_no_input.setRange(1, 999)
-        self.logo_connect_firm_no_input.setValue(1)
+        self.logo_connect_firm_no_input = QLineEdit()
+        self.logo_connect_firm_no_input.setPlaceholderText("Connect Firma No (örn. 1 veya 223_01)")
+        self.logo_connect_firm_no_input.setText("1")
+        self.logo_connect_firm_no_input.value = lambda: self.logo_connect_firm_no_input.text().strip()
+        self.logo_connect_firm_no_input.setValue = lambda v: self.logo_connect_firm_no_input.setText(str(v).strip())
 
         database_form.addRow("SQL Server", self.logo_server_input)
         database_form.addRow("Database", self.logo_database_input)
@@ -542,7 +545,7 @@ class SettingsTab(QWidget):
         connect_database = self.logo_connect_database_input.text().strip() or main_database
         db_username = self.logo_db_username_input.text().strip()
         db_password = self.logo_db_password_input.text()
-        connect_firm_no = int(self.logo_connect_firm_no_input.value())
+        connect_firm_no = self.logo_connect_firm_no_input.text().strip() or str(self.logo_firm_no_input.value())
 
         missing = []
         if not server:
@@ -585,7 +588,7 @@ class SettingsTab(QWidget):
             )
             return
 
-        table_name = f"LG_{connect_firm_no:03d}_APPROVAL"
+        table_name = format_connect_table_name(connect_firm_no)
         try:
             with pyodbc.connect(conn_str, timeout=5) as conn:
                 cursor = conn.cursor()
@@ -632,7 +635,7 @@ class SettingsTab(QWidget):
                     table_hints = []
                     if "Invalid object name" in tbl_err_str or "208" in tbl_err_str or "Geçersiz nesne adı" in tbl_err_str:
                         table_hints.append(f"• '{connect_database}' veritabanında '{table_name}' tablosu bulunamadı.")
-                        table_hints.append(f"• Connect Firma No ({connect_firm_no:03d}) hatalı olabilir. Logo Connect'te tanımlı firma numaranızı kontrol ediniz.")
+                        table_hints.append(f"• Connect Firma No ({connect_firm_no}) hatalı olabilir. Logo Connect'te tanımlı firma numaranızı kontrol ediniz.")
                         table_hints.append(f"• Logo Connect tablolarınız ana Tiger veritabanında değil, ayrı bir Connect veritabanında (örn: CONNECT, LGCONNECT) bulunuyor olabilir. 'Connect DB' alanına doğru veritabanı adını yazınız.")
                         table_hints.append("• İlgili firmanın Logo Connect e-Fatura / Onay modülü tabloları henüz oluşturulmamış veya tabloları açılmamış olabilir.")
                     else:
@@ -699,24 +702,15 @@ class SettingsTab(QWidget):
             "connect_database": self.logo_connect_database_input.text().strip(),
             "db_username": self.logo_db_username_input.text().strip(),
             "db_password": self.logo_db_password_input.text(),
-            "connect_firm_no": int(self.logo_connect_firm_no_input.value()),
+            "connect_firm_no": self.logo_connect_firm_no_input.text().strip(),
         }
 
         is_verified = True
         for key, val in current_config.items():
             verified_val = verified_config.get(key)
-            if key == "connect_firm_no":
-                try:
-                    if int(val) != int(verified_val):
-                        is_verified = False
-                        break
-                except (ValueError, TypeError):
-                    is_verified = False
-                    break
-            else:
-                if str(val).strip() != str(verified_val or "").strip():
-                    is_verified = False
-                    break
+            if str(val).strip() != str(verified_val if verified_val is not None else "").strip():
+                is_verified = False
+                break
 
         effective_db = current_config["connect_database"] or current_config["database"]
         if is_verified and bool(current_config["server"]) and bool(effective_db):
@@ -790,7 +784,7 @@ class SettingsTab(QWidget):
                 "logo_password": "",
                 "use_logo_connect": False,
                 "connect_database": "",
-                "connect_firm_no": 1,
+                "connect_firm_no": "1",
             },
             "sap": {
                 "host": "",
@@ -843,7 +837,7 @@ class SettingsTab(QWidget):
                 "logo_password": self.logo_user_password_input.text().strip(),
                 "use_logo_connect": self.use_logo_connect_checkbox.isChecked(),
                 "connect_database": self.logo_connect_database_input.text().strip(),
-                "connect_firm_no": self.logo_connect_firm_no_input.value(),
+                "connect_firm_no": self.logo_connect_firm_no_input.text().strip(),
             }
 
         if self.active_connector == "sap":
@@ -968,10 +962,10 @@ class SettingsTab(QWidget):
                 self.use_logo_connect_checkbox.setChecked(is_connect_enabled)
                 self.logo_connect_database_input.setText(str(logo_settings.get("connect_database", "")))
                 connect_firm = logo_settings.get("connect_firm_no")
-                if connect_firm is not None and str(connect_firm).isdigit():
-                    self.logo_connect_firm_no_input.setValue(int(connect_firm))
+                if connect_firm is not None and str(connect_firm).strip():
+                    self.logo_connect_firm_no_input.setText(str(connect_firm).strip())
                 else:
-                    self.logo_connect_firm_no_input.setValue(int(logo_settings.get("firm_no", 1) or 1))
+                    self.logo_connect_firm_no_input.setText(str(logo_settings.get("firm_no", 1) or 1).strip())
                 self.update_logo_connect_fields_visibility(is_connect_enabled)
             elif self.active_connector == "sap":
                 sap_settings = settings_data.get("sap", {})

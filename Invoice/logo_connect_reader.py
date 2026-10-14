@@ -2,7 +2,10 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-import pyodbc
+try:
+    import pyodbc
+except ImportError:
+    pyodbc = None
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +27,26 @@ class ConnectInvoiceRecord:
     doc_ref: int = 0         # 0: Bekliyor, >0: ERP Ref
 
 
+def format_connect_table_name(firm_val: Any) -> str:
+    """
+    Logo Connect veritabanındaki onay tablosu adını döndürür.
+    Örn: 1 -> LG_001_APPROVAL
+         "223_01" -> LG_223_01_APPROVAL
+         "LG_223_01_APPROVAL" -> LG_223_01_APPROVAL
+    """
+    s = str(firm_val or "").strip()
+    if s.upper().startswith("LG_"):
+        s = s[3:]
+    if s.upper().endswith("_APPROVAL"):
+        s = s[:-9]
+    s = "".join(c for c in s if c.isalnum() or c == "_")
+    if s.isdigit():
+        s = f"{int(s):03d}"
+    if not s:
+        s = "001"
+    return f"LG_{s}_APPROVAL"
+
+
 class LogoConnectReader:
     def __init__(self, logo_settings: Dict[str, Any]):
         self.logo_settings = logo_settings or {}
@@ -33,14 +56,12 @@ class LogoConnectReader:
         self.connect_database = connect_db if connect_db else self.main_database
         self.username = str(self.logo_settings.get("db_username", "")).strip()
         self.password = str(self.logo_settings.get("db_password", "")).strip()
-        try:
-            connect_firm = self.logo_settings.get("connect_firm_no")
-            if connect_firm is not None and int(connect_firm) > 0:
-                self.firm_no = int(connect_firm)
-            else:
-                self.firm_no = int(self.logo_settings.get("firm_no", 1) or 1)
-        except (TypeError, ValueError):
-            self.firm_no = 1
+        
+        connect_firm = self.logo_settings.get("connect_firm_no")
+        if connect_firm is not None and str(connect_firm).strip():
+            self.firm_no = str(connect_firm).strip()
+        else:
+            self.firm_no = str(self.logo_settings.get("firm_no", 1) or 1).strip()
 
     def build_connection_string(self) -> str:
         if not self.server or not self.connect_database:
@@ -62,7 +83,7 @@ class LogoConnectReader:
         )
 
     def get_approval_table_name(self) -> str:
-        return f"LG_{self.firm_no:03d}_APPROVAL"
+        return format_connect_table_name(self.firm_no)
 
     def fetch_untransferred_invoices(self) -> List[ConnectInvoiceRecord]:
         """
@@ -101,6 +122,9 @@ class LogoConnectReader:
 
         conn_str = self.build_connection_string()
         records: List[ConnectInvoiceRecord] = []
+
+        if pyodbc is None:
+            raise RuntimeError("Python 'pyodbc' modülü yüklü değil. Veritabanı bağlantısı kurulamaz.")
 
         try:
             with pyodbc.connect(conn_str, timeout=10) as conn:
