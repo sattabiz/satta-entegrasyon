@@ -17,6 +17,23 @@ class TestSettingsConnectButton(unittest.TestCase):
         self.tab.update_connect_test_button_visibility()
         self.assertTrue(self.tab.connect_test_button.isHidden())
 
+    def test_connect_fields_visibility_toggled_with_checkbox(self):
+        self.tab.use_logo_connect_checkbox.setChecked(False)
+        self.assertTrue(self.tab.logo_connect_database_input.isHidden())
+        self.assertTrue(self.tab.logo_connect_firm_no_input.isHidden())
+        self.assertFalse(self.tab.logo_connect_database_input.isEnabled())
+        self.assertFalse(self.tab.logo_connect_firm_no_input.isEnabled())
+
+        self.tab.use_logo_connect_checkbox.setChecked(True)
+        self.assertFalse(self.tab.logo_connect_database_input.isHidden())
+        self.assertFalse(self.tab.logo_connect_firm_no_input.isHidden())
+        self.assertTrue(self.tab.logo_connect_database_input.isEnabled())
+        self.assertTrue(self.tab.logo_connect_firm_no_input.isEnabled())
+
+        self.tab.use_logo_connect_checkbox.setChecked(False)
+        self.assertTrue(self.tab.logo_connect_database_input.isHidden())
+        self.assertTrue(self.tab.logo_connect_firm_no_input.isHidden())
+
     def test_connect_button_visible_when_connect_enabled_unverified(self):
         self.tab.use_logo_connect_checkbox.setChecked(True)
         # Mock load_existing_settings to return empty verified config

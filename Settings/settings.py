@@ -86,9 +86,11 @@ class SettingsTab(QWidget):
             self.logo_connect_database_input.textChanged.connect(self.update_connect_test_button_visibility)
             self.logo_connect_firm_no_input.valueChanged.connect(self.update_connect_test_button_visibility)
             self.use_logo_connect_checkbox.toggled.connect(self.update_connect_test_button_visibility)
+            self.use_logo_connect_checkbox.toggled.connect(self.update_logo_connect_fields_visibility)
 
             self.check_logo_test_button_visibility()
             self.update_connect_test_button_visibility()
+            self.update_logo_connect_fields_visibility(self.use_logo_connect_checkbox.isChecked())
 
     def load_active_connector(self) -> str:
         if not RUNTIME_CONFIG_FILE.exists():
@@ -243,14 +245,10 @@ class SettingsTab(QWidget):
         self.use_logo_connect_checkbox = QCheckBox("Logo Connect Entegrasyonunu Kullan (E-Fatura Eşleme)")
         self.logo_connect_database_input = QLineEdit()
         self.logo_connect_database_input.setPlaceholderText("Connect DB Adı (Boş ise ana DB kullanılır)")
-        self.logo_connect_database_input.setEnabled(False)
-        self.use_logo_connect_checkbox.toggled.connect(self.logo_connect_database_input.setEnabled)
 
         self.logo_connect_firm_no_input = QSpinBox()
         self.logo_connect_firm_no_input.setRange(1, 999)
         self.logo_connect_firm_no_input.setValue(1)
-        self.logo_connect_firm_no_input.setEnabled(False)
-        self.use_logo_connect_checkbox.toggled.connect(self.logo_connect_firm_no_input.setEnabled)
 
         database_form.addRow("SQL Server", self.logo_server_input)
         database_form.addRow("Database", self.logo_database_input)
@@ -261,6 +259,10 @@ class SettingsTab(QWidget):
         database_form.addRow("", self.use_logo_connect_checkbox)
         database_form.addRow("Connect DB", self.logo_connect_database_input)
         database_form.addRow("Connect Firma No", self.logo_connect_firm_no_input)
+
+        self.logo_database_form = database_form
+        self.use_logo_connect_checkbox.toggled.connect(self.update_logo_connect_fields_visibility)
+        self.update_logo_connect_fields_visibility(self.use_logo_connect_checkbox.isChecked())
 
         return database_group
 
@@ -722,6 +724,31 @@ class SettingsTab(QWidget):
         else:
             self.connect_test_button.setVisible(True)
 
+    def update_logo_connect_fields_visibility(self, visible: bool) -> None:
+        if hasattr(self, "logo_connect_database_input"):
+            self.logo_connect_database_input.setEnabled(visible)
+        if hasattr(self, "logo_connect_firm_no_input"):
+            self.logo_connect_firm_no_input.setEnabled(visible)
+
+        if hasattr(self, "logo_database_form") and self.logo_database_form is not None:
+            if hasattr(self.logo_database_form, "setRowVisible"):
+                self.logo_database_form.setRowVisible(self.logo_connect_database_input, visible)
+                self.logo_database_form.setRowVisible(self.logo_connect_firm_no_input, visible)
+            else:
+                self.logo_connect_database_input.setVisible(visible)
+                self.logo_connect_firm_no_input.setVisible(visible)
+                lbl1 = self.logo_database_form.labelForField(self.logo_connect_database_input)
+                if lbl1:
+                    lbl1.setVisible(visible)
+                lbl2 = self.logo_database_form.labelForField(self.logo_connect_firm_no_input)
+                if lbl2:
+                    lbl2.setVisible(visible)
+        else:
+            if hasattr(self, "logo_connect_database_input"):
+                self.logo_connect_database_input.setVisible(visible)
+            if hasattr(self, "logo_connect_firm_no_input"):
+                self.logo_connect_firm_no_input.setVisible(visible)
+
     def handle_sap_test(self) -> None:
         if not self.sap_host_input.text().strip() or not self.sap_client_input.text().strip():
             QMessageBox.warning(self, "Eksik Bilgi", "SAP Host ve Client alanlarını doldur.")
@@ -940,13 +967,12 @@ class SettingsTab(QWidget):
                 is_connect_enabled = bool(logo_settings.get("use_logo_connect", False))
                 self.use_logo_connect_checkbox.setChecked(is_connect_enabled)
                 self.logo_connect_database_input.setText(str(logo_settings.get("connect_database", "")))
-                self.logo_connect_database_input.setEnabled(is_connect_enabled)
                 connect_firm = logo_settings.get("connect_firm_no")
                 if connect_firm is not None and str(connect_firm).isdigit():
                     self.logo_connect_firm_no_input.setValue(int(connect_firm))
                 else:
                     self.logo_connect_firm_no_input.setValue(int(logo_settings.get("firm_no", 1) or 1))
-                self.logo_connect_firm_no_input.setEnabled(is_connect_enabled)
+                self.update_logo_connect_fields_visibility(is_connect_enabled)
             elif self.active_connector == "sap":
                 sap_settings = settings_data.get("sap", {})
                 self.sap_host_input.setText(str(sap_settings.get("host", "")))
