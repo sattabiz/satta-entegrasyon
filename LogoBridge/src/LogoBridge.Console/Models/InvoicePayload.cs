@@ -30,6 +30,18 @@ public sealed class InvoicePayload
     [JsonPropertyName("logo_invoice_type")]
     public int LogoInvoiceType { get; set; } = 1;
 
+    [JsonPropertyName("is_e_invoice")]
+    public bool IsEInvoice { get; set; }
+
+    [JsonPropertyName("guid")]
+    public string Guid { get; set; } = string.Empty;
+
+    [JsonPropertyName("profile_id")]
+    public int ProfileId { get; set; } = 1;
+
+    [JsonPropertyName("connect_logical_ref")]
+    public int ConnectLogicalRef { get; set; }
+
     [JsonPropertyName("document_number")]
     public string DocumentNumber { get; set; } = string.Empty;
 

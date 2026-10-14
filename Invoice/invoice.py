@@ -41,6 +41,13 @@ class InvoiceTransferTab(QWidget):
     def __init__(self):
         super().__init__()
 
+        self.satta_categories = []
+        self.all_invoices = []
+        self.invoice_details = {}
+        self.invoice_id_map = {}
+        self.invoice_raw_map = {}
+        self.editable_invoice_ids = set()
+
         root_layout = QVBoxLayout(self)
 
         self.active_connector = self.load_active_connector()
@@ -88,24 +95,11 @@ class InvoiceTransferTab(QWidget):
         root_layout.addLayout(button_layout)
 
         self.invoice_table = QTableWidget(0, 10)
-        self.invoice_table.setHorizontalHeaderLabels([
-            "Seç",
-            "Fatura No",
-            "Cari",
-            "Fatura Tarihi",
-            "Ödeme Tarihi",
-            "Döviz Cinsi",
-            "KDV Hariç Tutar",
-            "KDV Dahil Tutar",
-            "Toplam Tutar",
-            "Invoice ID",
-        ])
         self.invoice_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.invoice_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.invoice_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.invoice_table.setColumnWidth(0, 36)
         self.invoice_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         enable_table_copy(self.invoice_table)
+        self.setup_invoice_table_columns()
         root_layout.addWidget(self.invoice_table)
 
         self.detail_container = QWidget()
@@ -149,12 +143,6 @@ class InvoiceTransferTab(QWidget):
 
         root_layout.addLayout(status_info_layout)
 
-        self.satta_categories = []
-        self.all_invoices = []
-        self.invoice_details = {}
-        self.invoice_id_map = {}
-        self.invoice_raw_map = {}
-        self.editable_invoice_ids = set()
         self.search_button.clicked.connect(self.run_search_with_feedback)
         self.search_input.returnPressed.connect(self.run_search_with_feedback)
         self.search_input.textChanged.connect(self.filter_invoices)
@@ -177,6 +165,48 @@ class InvoiceTransferTab(QWidget):
 
     def get_connector_display_name(self):
         return CONNECTOR_DISPLAY_NAMES.get(self.active_connector, "Hedef Sistem")
+
+    def setup_invoice_table_columns(self):
+        logo_settings = self.load_logo_settings()
+        use_connect = bool(logo_settings.get("use_logo_connect", False))
+        target_cols = 11 if use_connect else 10
+        col_count_changed = (self.invoice_table.columnCount() != target_cols)
+
+        if use_connect:
+            self.invoice_table.setColumnCount(11)
+            self.invoice_table.setHorizontalHeaderLabels([
+                "Seç",
+                "Fatura No",
+                "E-Fatura Durumu",
+                "Cari",
+                "Fatura Tarihi",
+                "Ödeme Tarihi",
+                "Döviz Cinsi",
+                "KDV Hariç Tutar",
+                "KDV Dahil Tutar",
+                "Toplam Tutar",
+                "Invoice ID",
+            ])
+            self.invoice_table.setColumnWidth(2, 220)
+        else:
+            self.invoice_table.setColumnCount(10)
+            self.invoice_table.setHorizontalHeaderLabels([
+                "Seç",
+                "Fatura No",
+                "Cari",
+                "Fatura Tarihi",
+                "Ödeme Tarihi",
+                "Döviz Cinsi",
+                "KDV Hariç Tutar",
+                "KDV Dahil Tutar",
+                "Toplam Tutar",
+                "Invoice ID",
+            ])
+        self.invoice_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.invoice_table.setColumnWidth(0, 36)
+
+        if col_count_changed and getattr(self, "all_invoices", None):
+            self.populate_invoice_table(self.all_invoices)
 
     def run_search_with_feedback(self):
         self.filter_invoices(show_no_results_message=True)
@@ -453,6 +483,55 @@ class InvoiceTransferTab(QWidget):
         try:
             invoice_rows, invoice_details, invoice_id_map, invoice_raw_map = self.fetch_invoices()
             self.satta_categories = self.fetch_categories()
+
+            logo_settings = self.load_logo_settings()
+            use_connect = bool(logo_settings.get("use_logo_connect", False))
+
+            if use_connect and invoice_raw_map:
+                try:
+                    from Invoice.logo_connect_reader import LogoConnectReader
+                    from Invoice.invoice_matcher import InvoiceMatcher
+
+                    connect_reader = LogoConnectReader(logo_settings)
+                    connect_records = connect_reader.fetch_untransferred_invoices()
+                    matcher = InvoiceMatcher(connect_records)
+
+                    for inv_id, raw_inv in invoice_raw_map.items():
+                        match_res = matcher.match_satta_invoice(raw_inv)
+                        if match_res.is_matched and match_res.connect_record and matcher.is_valid_ettn(match_res.connect_record.ettn_guid):
+                            c_rec = match_res.connect_record
+                            raw_inv["is_e_invoice"] = True
+                            raw_inv["ettn_guid"] = c_rec.ettn_guid
+                            raw_inv["profile_id"] = c_rec.profile_id
+                            raw_inv["connect_logical_ref"] = c_rec.logical_ref
+                            raw_inv["gib_invoice_no"] = c_rec.invoice_number
+                            raw_inv["e_invoice_status_text"] = match_res.display_text
+                            raw_inv["e_invoice_match_reason"] = match_res.reason
+                        else:
+                            raw_inv["is_e_invoice"] = False
+                            raw_inv["ettn_guid"] = None
+                            raw_inv["profile_id"] = None
+                            raw_inv["connect_logical_ref"] = None
+                            raw_inv["gib_invoice_no"] = None
+                            raw_inv["e_invoice_status_text"] = match_res.display_text
+                            raw_inv["e_invoice_match_reason"] = match_res.reason
+                except Exception as c_exc:
+                    for raw_inv in invoice_raw_map.values():
+                        raw_inv["is_e_invoice"] = False
+                        raw_inv["ettn_guid"] = None
+                        raw_inv["profile_id"] = None
+                        raw_inv["connect_logical_ref"] = None
+                        raw_inv["e_invoice_status_text"] = "⚠️ Connect Hatası"
+                        raw_inv["e_invoice_match_reason"] = str(c_exc)
+            else:
+                for raw_inv in invoice_raw_map.values():
+                    raw_inv["is_e_invoice"] = False
+                    raw_inv["ettn_guid"] = None
+                    raw_inv["profile_id"] = None
+                    raw_inv["connect_logical_ref"] = None
+                    raw_inv["e_invoice_status_text"] = ""
+                    raw_inv["e_invoice_match_reason"] = ""
+
             self.apply_invoice_data(invoice_rows, invoice_details, invoice_id_map, invoice_raw_map)
         except Exception as exc:
             satta_settings = self.load_satta_settings()
@@ -651,6 +730,10 @@ class InvoiceTransferTab(QWidget):
         )
 
     def populate_invoice_table(self, rows):
+        self.setup_invoice_table_columns()
+        logo_settings = self.load_logo_settings()
+        use_connect = bool(logo_settings.get("use_logo_connect", False))
+
         self.invoice_table.setRowCount(0)
         for raw_row_data in rows:
             row_data = self.normalize_table_row(raw_row_data)
@@ -667,14 +750,11 @@ class InvoiceTransferTab(QWidget):
             invoice_id = self.invoice_id_map.get(invoice_no)
             raw_invoice = self.invoice_raw_map.get(invoice_id) if invoice_id is not None else None
 
-            # Columns 1 to 4: Fatura No, Cari, Fatura Tarihi, Ödeme Tarihi
-            for col_index in range(1, 5):
-                val = row_data[col_index - 1] if len(row_data) >= col_index else ""
-                item = QTableWidgetItem(str(val))
-                if col_index == 1:
-                    item.setData(Qt.UserRole, invoice_id)
-                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-                self.invoice_table.setItem(row_index, col_index, item)
+            # Col 1: Fatura No
+            fatura_no_item = QTableWidgetItem(invoice_no)
+            fatura_no_item.setData(Qt.UserRole, invoice_id)
+            fatura_no_item.setFlags(fatura_no_item.flags() & ~Qt.ItemIsEditable)
+            self.invoice_table.setItem(row_index, 1, fatura_no_item)
 
             raw_currency = str(row_data[4]).strip() if len(row_data) > 4 else ""
             if raw_currency.upper() == "TL":
@@ -697,11 +777,6 @@ class InvoiceTransferTab(QWidget):
                 without_vat_str = str(row_data[5]) if len(row_data) > 5 else "0.00"
                 with_vat_str = str(row_data[6]) if len(row_data) > 6 else "0.00"
                 total_str = str(row_data[7]) if len(row_data) > 7 else "0.00"
-
-            # Column 5: Döviz Cinsi (QComboBox)
-            dummy_item = QTableWidgetItem(selected_curr)
-            dummy_item.setFlags(dummy_item.flags() & ~Qt.ItemIsEditable)
-            self.invoice_table.setItem(row_index, 5, dummy_item)
 
             currency_combo = QComboBox()
             currency_combo.setMinimumHeight(26)
@@ -727,28 +802,109 @@ class InvoiceTransferTab(QWidget):
                 lambda idx, inv_id=invoice_id, combo=currency_combo:
                 self.handle_invoice_currency_changed(inv_id, combo)
             )
-            self.invoice_table.setCellWidget(row_index, 5, currency_combo)
 
-            # Column 6: KDV Hariç Tutar
-            item6 = QTableWidgetItem(without_vat_str)
-            item6.setFlags(item6.flags() & ~Qt.ItemIsEditable)
-            self.invoice_table.setItem(row_index, 6, item6)
+            if use_connect:
+                is_e_inv = bool(raw_invoice.get("is_e_invoice")) if isinstance(raw_invoice, dict) else False
+                status_text = raw_invoice.get("e_invoice_status_text", "") if isinstance(raw_invoice, dict) else ""
+                reason = raw_invoice.get("e_invoice_match_reason", "") if isinstance(raw_invoice, dict) else ""
+                ettn = raw_invoice.get("ettn_guid", "") if isinstance(raw_invoice, dict) else ""
+                gib_no = raw_invoice.get("gib_invoice_no", "") if isinstance(raw_invoice, dict) else ""
 
-            # Column 7: KDV Dahil Tutar
-            item7 = QTableWidgetItem(with_vat_str)
-            item7.setFlags(item7.flags() & ~Qt.ItemIsEditable)
-            self.invoice_table.setItem(row_index, 7, item7)
+                if not status_text:
+                    if is_e_inv:
+                        status_text = f"✓ E-Fatura ({gib_no})" if gib_no else "✓ E-Fatura"
+                    else:
+                        status_text = "⏳ Connect'te Yok"
 
-            # Column 8: Toplam Tutar
-            item8 = QTableWidgetItem(total_str)
-            item8.setFlags(item8.flags() & ~Qt.ItemIsEditable)
-            self.invoice_table.setItem(row_index, 8, item8)
+                status_item = QTableWidgetItem(status_text)
+                status_item.setFlags(status_item.flags() & ~Qt.ItemIsEditable)
 
-            # Column 9: Invoice ID
-            invoice_id_text = str(invoice_id) if invoice_id is not None else "-"
-            invoice_id_item = QTableWidgetItem(invoice_id_text)
-            invoice_id_item.setFlags(invoice_id_item.flags() & ~Qt.ItemIsEditable)
-            self.invoice_table.setItem(row_index, 9, invoice_id_item)
+                if is_e_inv:
+                    status_item.setForeground(QColor("#2e7d32"))
+                    status_item.setToolTip(
+                        f"Logo Connect ile Eşleşti\n"
+                        f"Connect Fatura No: {gib_no}\n"
+                        f"ETTN (GUID): {ettn}\n"
+                        f"Eşleşme Detayı: {reason}"
+                    )
+                else:
+                    status_item.setForeground(QColor("#d84315"))
+                    status_item.setToolTip(
+                        f"Connect Gelen Kutusunda Bulunamadı\n"
+                        f"Detay: {reason}\n"
+                        f"(Kağıt Fatura olarak aktarılabilir)"
+                    )
+
+                # Col 2: E-Fatura Durumu (Fatura Numarasının hemen yanında)
+                self.invoice_table.setItem(row_index, 2, status_item)
+
+                # Col 3 to 5: Cari, Fatura Tarihi, Ödeme Tarihi
+                for col_offset, val_index in [(3, 1), (4, 2), (5, 3)]:
+                    val = row_data[val_index] if len(row_data) > val_index else ""
+                    item = QTableWidgetItem(str(val))
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    self.invoice_table.setItem(row_index, col_offset, item)
+
+                # Col 6: Döviz Cinsi (QComboBox)
+                dummy_item = QTableWidgetItem(selected_curr)
+                dummy_item.setFlags(dummy_item.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 6, dummy_item)
+                self.invoice_table.setCellWidget(row_index, 6, currency_combo)
+
+                # Col 7: KDV Hariç Tutar
+                item7 = QTableWidgetItem(without_vat_str)
+                item7.setFlags(item7.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 7, item7)
+
+                # Col 8: KDV Dahil Tutar
+                item8 = QTableWidgetItem(with_vat_str)
+                item8.setFlags(item8.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 8, item8)
+
+                # Col 9: Toplam Tutar
+                item9 = QTableWidgetItem(total_str)
+                item9.setFlags(item9.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 9, item9)
+
+                # Col 10: Invoice ID
+                invoice_id_text = str(invoice_id) if invoice_id is not None else "-"
+                invoice_id_item = QTableWidgetItem(invoice_id_text)
+                invoice_id_item.setFlags(invoice_id_item.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 10, invoice_id_item)
+            else:
+                # Col 2 to 4: Cari, Fatura Tarihi, Ödeme Tarihi
+                for col_offset, val_index in [(2, 1), (3, 2), (4, 3)]:
+                    val = row_data[val_index] if len(row_data) > val_index else ""
+                    item = QTableWidgetItem(str(val))
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    self.invoice_table.setItem(row_index, col_offset, item)
+
+                # Col 5: Döviz Cinsi (QComboBox)
+                dummy_item = QTableWidgetItem(selected_curr)
+                dummy_item.setFlags(dummy_item.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 5, dummy_item)
+                self.invoice_table.setCellWidget(row_index, 5, currency_combo)
+
+                # Col 6: KDV Hariç Tutar
+                item6 = QTableWidgetItem(without_vat_str)
+                item6.setFlags(item6.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 6, item6)
+
+                # Col 7: KDV Dahil Tutar
+                item7 = QTableWidgetItem(with_vat_str)
+                item7.setFlags(item7.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 7, item7)
+
+                # Col 8: Toplam Tutar
+                item8 = QTableWidgetItem(total_str)
+                item8.setFlags(item8.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 8, item8)
+
+                # Col 9: Invoice ID
+                invoice_id_text = str(invoice_id) if invoice_id is not None else "-"
+                invoice_id_item = QTableWidgetItem(invoice_id_text)
+                invoice_id_item.setFlags(invoice_id_item.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 9, invoice_id_item)
 
     def handle_invoice_currency_changed(self, invoice_id, combo):
         if invoice_id is None or not combo:
@@ -767,29 +923,34 @@ class InvoiceTransferTab(QWidget):
         raw_invoice["selected_currency"] = new_currency
 
         target_row = -1
+        target_col = -1
         for row in range(self.invoice_table.rowCount()):
-            if self.invoice_table.cellWidget(row, 5) == combo:
-                target_row = row
+            for col in (5, 6):
+                if self.invoice_table.cellWidget(row, col) == combo:
+                    target_row = row
+                    target_col = col
+                    break
+            if target_row != -1:
                 break
 
         without_vat_str, with_vat_str, total_str = self.calculate_invoice_display_amounts(raw_invoice, new_currency)
 
-        if target_row != -1:
-            dummy_item = self.invoice_table.item(target_row, 5)
+        if target_row != -1 and target_col != -1:
+            dummy_item = self.invoice_table.item(target_row, target_col)
             if dummy_item:
                 dummy_item.setText(new_currency)
 
-            item6 = self.invoice_table.item(target_row, 6)
-            if item6:
-                item6.setText(without_vat_str)
+            item_without_vat = self.invoice_table.item(target_row, target_col + 1)
+            if item_without_vat:
+                item_without_vat.setText(without_vat_str)
 
-            item7 = self.invoice_table.item(target_row, 7)
-            if item7:
-                item7.setText(with_vat_str)
+            item_with_vat = self.invoice_table.item(target_row, target_col + 2)
+            if item_with_vat:
+                item_with_vat.setText(with_vat_str)
 
-            item8 = self.invoice_table.item(target_row, 8)
-            if item8:
-                item8.setText(total_str)
+            item_total = self.invoice_table.item(target_row, target_col + 3)
+            if item_total:
+                item_total.setText(total_str)
 
         invoice_no = self._safe_text(raw_invoice.get("invoice_no"))
         updated_all_invoices = []
@@ -874,8 +1035,17 @@ class InvoiceTransferTab(QWidget):
             self.update_selected_count()
             return
 
-        if item.column() in (1, 5, 9):
-            return
+        logo_settings = self.load_logo_settings()
+        use_connect = bool(logo_settings.get("use_logo_connect", False))
+
+        if use_connect:
+            if item.column() not in (3, 4, 5, 7, 8, 9):
+                return
+            data_index = item.column() - 2
+        else:
+            if item.column() not in (2, 3, 4, 6, 7, 8):
+                return
+            data_index = item.column() - 1
 
         invoice_no_item = self.invoice_table.item(item.row(), 1)
         invoice_id = invoice_no_item.data(Qt.UserRole) if invoice_no_item is not None else None
@@ -884,7 +1054,6 @@ class InvoiceTransferTab(QWidget):
             return
 
         invoice_no = invoice_no_item.text().strip() if invoice_no_item else ""
-        data_index = item.column() - 1
 
         updated_rows = []
         for row_data in self.all_invoices:
@@ -1271,6 +1440,27 @@ class InvoiceTransferTab(QWidget):
         logo_settings["warehouse_nr"] = int(selected_wh_data)
         logo_settings["source_index"] = int(selected_wh_data)
 
+        use_connect = bool(logo_settings.get("use_logo_connect", False))
+        if use_connect:
+            unmatched_invoices = [
+                inv for inv in selected_raw_invoices
+                if not inv.get("is_e_invoice", False)
+            ]
+            if unmatched_invoices:
+                choice = self._confirm_paper_invoice_transfer(
+                    unmatched_invoices=unmatched_invoices,
+                    total_selected=len(selected_raw_invoices)
+                )
+                if choice == "cancel":
+                    return
+                elif choice == "einvoice_only":
+                    selected_raw_invoices = [
+                        inv for inv in selected_raw_invoices
+                        if inv.get("is_e_invoice", False)
+                    ]
+                    if not selected_raw_invoices:
+                        return
+
         transfer_service = LogoTransferService(logo_settings)
 
         try:
@@ -1304,12 +1494,101 @@ class InvoiceTransferTab(QWidget):
         if satta_marked_nos:
             self.remove_transferred_invoices_from_ui(satta_marked_nos)
 
-        self._show_transfer_result_dialog(
-            success_count=len(satta_marked_nos),
-            failed_results=failed_results
+        # Başarıyla aktarılanlar içerisindeki e-fatura sayısı
+        einvoice_count = sum(
+            1 for item in successful_invoices
+            if bool(self.invoice_raw_map.get(item.get("id"), {}).get("is_e_invoice", False))
         )
 
-    def _show_transfer_result_dialog(self, success_count: int, failed_results: list):
+        self._show_transfer_result_dialog(
+            success_count=len(satta_marked_nos),
+            failed_results=failed_results,
+            einvoice_count=einvoice_count,
+            use_connect=use_connect,
+        )
+
+    def _confirm_paper_invoice_transfer(self, unmatched_invoices: list, total_selected: int = 0) -> str:
+        matched_count = max(0, total_selected - len(unmatched_invoices))
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Question)
+        msg_box.setWindowTitle("Kağıt Fatura Aktarım Onayı")
+
+        table_rows = []
+        for inv in unmatched_invoices:
+            inv_no = str(inv.get("invoice_no") or "-").strip()
+            seller = str(inv.get("seller_name") or "-").strip()
+            total_val = (
+                inv.get("total_tl_price")
+                or inv.get("total_price")
+                or inv.get("grand_total")
+                or (float(inv.get("price_without_vat") or 0) + float(inv.get("invoice_vat_total") or 0))
+            )
+            try:
+                formatted_total = f"{float(total_val):,.2f} TL".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception:
+                formatted_total = f"{total_val} TL"
+
+            table_rows.append(
+                f"<tr style='border-bottom: 1px solid #e0e0e0;'>"
+                f"<td style='padding: 6px 10px; font-weight: bold;'>{inv_no}</td>"
+                f"<td style='padding: 6px 10px;'>{seller}</td>"
+                f"<td style='padding: 6px 10px; text-align: right; white-space: nowrap;'>{formatted_total}</td>"
+                f"</tr>"
+            )
+
+        rows_html = "".join(table_rows)
+        html_text = (
+            f"<div style='font-family: Segoe UI, sans-serif; font-size: 12px; color: #222; min-width: 480px;'>"
+            f"<div style='font-size: 14px; font-weight: bold; color: #d84315; margin-bottom: 8px;'>"
+            f"⚠️ Connect Eşleşmesi Bulunamayan Faturalar ({len(unmatched_invoices)})"
+            f"</div>"
+            f"<div style='margin-bottom: 10px; line-height: 1.4;'>"
+            f"Seçtiğiniz faturalardan <b>{len(unmatched_invoices)}</b> tanesi Logo Connect gelen kutusunda bulunamadı.<br>"
+            f"Bu faturalar Logo Tiger'a <b>Kağıt Fatura</b> olarak aktarılacaktır."
+            f"</div>"
+            f"<table style='width: 100%; border-collapse: collapse; border: 1px solid #ccc; background-color: #fafafa; font-size: 11px;'>"
+            f"<thead>"
+            f"<tr style='background-color: #eee; border-bottom: 2px solid #bbb;'>"
+            f"<th style='padding: 6px 10px; text-align: left;'>Fatura No</th>"
+            f"<th style='padding: 6px 10px; text-align: left;'>Tedarikçi (Cari)</th>"
+            f"<th style='padding: 6px 10px; text-align: right;'>Tutar</th>"
+            f"</tr>"
+            f"</thead>"
+            f"<tbody>"
+            f"{rows_html}"
+            f"</tbody>"
+            f"</table>"
+            f"<div style='margin-top: 12px; font-weight: bold; color: #1565c0;'>"
+            f"Nasıl devam etmek istersiniz?"
+            f"</div>"
+            f"</div>"
+        )
+
+        msg_box.setText(html_text)
+        msg_box.setTextFormat(Qt.RichText)
+
+        btn_einvoice_only = None
+        if matched_count > 0:
+            btn_einvoice_only = msg_box.addButton(f"Sadece E-Faturaları Aktar ({matched_count} Adet)", QMessageBox.ActionRole)
+            btn_all = msg_box.addButton(f"Tümünü Aktar ({len(unmatched_invoices)} Kağıt Dahil)", QMessageBox.YesRole)
+            btn_cancel = msg_box.addButton("İptal", QMessageBox.RejectRole)
+            msg_box.setDefaultButton(btn_einvoice_only)
+        else:
+            btn_all = msg_box.addButton("Evet, Kağıt Fatura Olarak Aktar", QMessageBox.YesRole)
+            btn_cancel = msg_box.addButton("İptal", QMessageBox.RejectRole)
+            msg_box.setDefaultButton(btn_cancel)
+
+        msg_box.exec()
+        clicked = msg_box.clickedButton()
+
+        if btn_einvoice_only is not None and clicked == btn_einvoice_only:
+            return "einvoice_only"
+        elif clicked == btn_all:
+            return "all"
+        else:
+            return "cancel"
+
+    def _show_transfer_result_dialog(self, success_count: int, failed_results: list, einvoice_count: int = 0, use_connect: bool = False):
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Fatura Aktarım Sonucu")
 
@@ -1379,6 +1658,7 @@ class InvoiceTransferTab(QWidget):
         self.load_cached_warehouses()
         self.select_saved_warehouse()
         self.warehouse_dropdown.currentIndexChanged.connect(self.save_selected_warehouse)
+        self.setup_invoice_table_columns()
 
     def handle_line_category_changed(self, invoice_id, product_index, combo_widget):
         cat_data = combo_widget.currentData()

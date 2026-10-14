@@ -438,6 +438,22 @@ public sealed class LogoObjectService
             dataObject.DataFields.FieldByName("TIME").Value = ResolveLogoPackedTime(payload.DocumentTime);
             dataObject.DataFields.FieldByName("ARP_CODE").Value = payload.ArpCode ?? string.Empty;
             try { dataObject.FillDefaults(); } catch { }
+
+            if (payload.IsEInvoice || !string.IsNullOrWhiteSpace(payload.Guid))
+            {
+                try { dataObject.DataFields.FieldByName("EINVOICE").Value = (short)1; } catch { }
+                try { dataObject.DataFields.FieldByName("PROFILE_ID").Value = (short)(payload.ProfileId > 0 ? payload.ProfileId : 1); } catch { }
+                try { dataObject.DataFields.FieldByName("ESTATUS").Value = (short)12; } catch { }
+                try { dataObject.DataFields.FieldByName("EDURATION_TYPE").Value = (short)0; } catch { }
+                if (!string.IsNullOrWhiteSpace(payload.Guid))
+                {
+                    try { dataObject.DataFields.FieldByName("GUID").Value = payload.Guid; } catch { }
+                }
+            }
+            else
+            {
+                try { dataObject.DataFields.FieldByName("EINVOICE").Value = (short)0; } catch { }
+            }
             
             var paymentCode = ReadOptionalPayloadString(payload, "PaymentCode", string.Empty);
             if (!string.IsNullOrWhiteSpace(paymentCode))
@@ -1233,6 +1249,71 @@ public sealed class LogoObjectService
 
     private int ReadPossibleIntPropertyOrMethod(object target, params string[] memberNames)
     {
+        if (target is null)
+        {
+            return 0;
+        }
+
+        // 1. Logo Objects DataFields koleksiyonu üzerinden okuma (En güvenilir Logo COM yöntemi)
+        try
+        {
+            dynamic dynTarget = target;
+            var dataFields = dynTarget.DataFields;
+            if (dataFields != null)
+            {
+                string[] fieldKeys = new[] { "LOGICALREF", "INTERNAL_REFERENCE", "DATA_REFERENCE" };
+                foreach (var fKey in fieldKeys)
+                {
+                    try
+                    {
+                        var field = dataFields.FieldByName(fKey);
+                        if (field != null && field.Value != null)
+                        {
+                            int val = Convert.ToInt32(field.Value, CultureInfo.InvariantCulture);
+                            if (val > 0)
+                            {
+                                return val;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        // 2. IDispatch COM InvokeMember
+        foreach (var memberName in memberNames)
+        {
+            try
+            {
+                var val = target.GetType().InvokeMember(
+                    memberName,
+                    BindingFlags.GetProperty | BindingFlags.GetField | BindingFlags.InvokeMethod,
+                    null,
+                    target,
+                    null,
+                    CultureInfo.InvariantCulture
+                );
+                if (val != null)
+                {
+                    int intVal = Convert.ToInt32(val, CultureInfo.InvariantCulture);
+                    if (intVal > 0)
+                    {
+                        return intVal;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        // 3. Standart .NET Reflection
         foreach (var memberName in memberNames)
         {
             try
@@ -1243,13 +1324,16 @@ public sealed class LogoObjectService
                     var propertyValue = property.GetValue(target);
                     if (propertyValue is not null)
                     {
-                        return Convert.ToInt32(propertyValue, CultureInfo.InvariantCulture);
+                        int intVal = Convert.ToInt32(propertyValue, CultureInfo.InvariantCulture);
+                        if (intVal > 0)
+                        {
+                            return intVal;
+                        }
                     }
                 }
             }
             catch
             {
-                // Bir sonraki alan denenir.
             }
 
             try
@@ -1260,13 +1344,16 @@ public sealed class LogoObjectService
                     var methodResult = method.Invoke(target, null);
                     if (methodResult is not null)
                     {
-                        return Convert.ToInt32(methodResult, CultureInfo.InvariantCulture);
+                        int intVal = Convert.ToInt32(methodResult, CultureInfo.InvariantCulture);
+                        if (intVal > 0)
+                        {
+                            return intVal;
+                        }
                     }
                 }
             }
             catch
             {
-                // Bir sonraki alan denenir.
             }
         }
 
@@ -1557,6 +1644,10 @@ public sealed class LogoObjectService
         result.Details["currency_code"] = payload.CurrencyCode;
         result.Details["warehouse_nr"] = payload.WarehouseNr.ToString(CultureInfo.InvariantCulture);
         result.Details["source_index"] = payload.SourceIndex.ToString(CultureInfo.InvariantCulture);
+        result.Details["is_e_invoice"] = payload.IsEInvoice ? "true" : "false";
+        result.Details["guid"] = payload.Guid;
+        result.Details["profile_id"] = payload.ProfileId.ToString(CultureInfo.InvariantCulture);
+        result.Details["connect_logical_ref"] = payload.ConnectLogicalRef.ToString(CultureInfo.InvariantCulture);
     }
 
     private void AppendMappedHeaderSummary(BridgeResult result, Dictionary<string, string> headerFields)
