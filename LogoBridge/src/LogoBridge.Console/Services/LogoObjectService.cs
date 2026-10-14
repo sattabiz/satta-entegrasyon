@@ -549,7 +549,6 @@ public sealed class LogoObjectService
                 try { currentLine.FillDefaults(); } catch { }
                 currentLine.FieldByName("QUANTITY").Value = (double)(line.Quantity > 0 ? line.Quantity : 1.0m);
                 currentLine.FieldByName("PRICE").Value = (double)line.UnitPrice;
-                currentLine.FieldByName("TOTAL").Value = (double)line.Total;
                 
                 currentLine.FieldByName("VAT_RATE").Value = (double)(line.VatRate >= 0 ? line.VatRate : 0m);
                 if (!string.IsNullOrWhiteSpace(line.UnitCode))
@@ -738,10 +737,15 @@ public sealed class LogoObjectService
             
             try 
             {
-                var validationErrors = dynData.ValidateErrors;
-                if (validationErrors != null && validationErrors.Count > 0)
+                var validationErrors = (object?)dynData.ValidateErrors;
+                if (validationErrors is not null)
                 {
-                    detailedError += " | Validation: " + validationErrors[0].Error;
+                    dynamic dynErrors = validationErrors;
+                    int count = dynErrors.Count;
+                    if (count > 0)
+                    {
+                        detailedError += " | Validation: " + dynErrors[0].Error;
+                    }
                 }
             } catch { }
 
@@ -846,7 +850,8 @@ public sealed class LogoObjectService
         {
             string dateStr = date.ToString("yyyy-MM-dd");
             
-            dynamic query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+            dynamic? query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+            if (query is null) return null;
             query.Statement = $"SELECT RATES1 FROM L_DAILYEXCHANGES WHERE EDATE = '{dateStr}' AND CURTYPE = {currencyType}";
             
             bool openResult = (bool)query.GetType().InvokeMember("Open", BindingFlags.InvokeMethod, null, query, null);
@@ -898,7 +903,8 @@ public sealed class LogoObjectService
         {
             string tableName = $"LG_{firmNo:D3}_CLCARD";
             
-            dynamic query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+            dynamic? query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+            if (query is null) return null;
             query.Statement = $"SELECT CCURRENCY FROM {tableName} WHERE CODE = '{arpCode}'";
             
             bool openResult = (bool)query.GetType().InvokeMember("Open", BindingFlags.InvokeMethod, null, query, null);
@@ -925,7 +931,8 @@ public sealed class LogoObjectService
             {
                 string tableName = $"LG_{firmNo:D3}_CLCARD";
                 
-                dynamic query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+                dynamic? query = unityApplication.GetType().InvokeMember("NewQuery", BindingFlags.InvokeMethod, null, unityApplication, null);
+                if (query is null) return null;
                 query.Statement = $"SELECT CURRTYPE FROM {tableName} WHERE CODE = '{arpCode}'";
                 
                 bool openResult = (bool)query.GetType().InvokeMember("Open", BindingFlags.InvokeMethod, null, query, null);

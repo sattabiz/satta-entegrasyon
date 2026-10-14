@@ -80,7 +80,6 @@ public sealed class InvoiceMapper
             ["SOURCECOSTGRP"] = line.SourceIndex.ToString(CultureInfo.InvariantCulture),
             ["UNIT_CODE"] = line.UnitCode,
             ["VAT_RATE"] = line.VatRate.ToString(CultureInfo.InvariantCulture),
-            ["TOTAL"] = line.Total.ToString(CultureInfo.InvariantCulture),
             ["DESCRIPTION"] = line.Description,
             ["DESCRIPTION2"] = line.Description2,
         };

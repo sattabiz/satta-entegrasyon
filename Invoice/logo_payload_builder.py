@@ -12,7 +12,6 @@ class LogoPayloadBuilder:
 
         invoice_id = self._to_int(invoice.get("invoice_id"))
         invoice_no = self._safe_text(invoice.get("invoice_no"))
-        seller_erp_id = self._safe_text(invoice.get("seller_erp_id"))
         invoice_date = self._format_datetime(invoice.get("invoice_date"))
         payment_date = self._format_datetime(invoice.get("payment_date"))
         invoice_note = self._safe_text(invoice.get("note"))
@@ -22,6 +21,9 @@ class LogoPayloadBuilder:
 
         if not invoice_no:
             raise ValueError("invoice_no bulunamadı.")
+
+        currency_code = self._resolve_invoice_currency(invoice)
+        seller_erp_id = self._resolve_arp_code(invoice, currency_code)
 
         if not seller_erp_id:
             raise ValueError("seller_erp_id bulunamadı. Cari hesap eşlemesi yapılamaz.")
@@ -87,9 +89,9 @@ class LogoPayloadBuilder:
             "source_index": self._to_int(self.logo_settings.get("source_index"), default=0),
             "factory_nr": self._to_int(self.logo_settings.get("factory_nr"), default=0),
             "warehouse_nr": self._to_int(self.logo_settings.get("warehouse_nr"), default=0),
-            "currency_code": self._resolve_invoice_currency(invoice),
+            "currency_code": currency_code,
             "exchange_rate": self._resolve_exchange_rate(invoice),
-            "transaction_currency_id": self._resolve_currency_id(self._resolve_invoice_currency(invoice)),
+            "transaction_currency_id": self._resolve_currency_id(currency_code),
             "transaction_currency_rate": self._resolve_exchange_rate(invoice),
             "usd_rate": self._resolve_line_exchange_rate(invoice, "USD"),
             "notes": self._build_notes(invoice_id, payment_date, invoice_note),
@@ -116,24 +118,42 @@ class LogoPayloadBuilder:
 
             raw_price = self._to_float(product.get("price"))
             tl_price = self._to_float(product.get("price_in_tl"))
+            line_total = self._to_float(product.get("line_total_without_tax"))
 
             # Cari'den tespit edilen ana fatura dövizini kullanıyoruz (Satırın kendi döviz kodunu eziyoruz)
             line_currency_code = self._resolve_invoice_currency(invoice)
             currency_id = self._resolve_currency_id(line_currency_code)
             currency_rate = self._resolve_line_exchange_rate(invoice, line_currency_code)
 
-            if currency_id != 0:
-                if tl_price <= 0 and currency_rate > 0:
-                    unit_price = raw_price * currency_rate
-                else:
-                    unit_price = tl_price if tl_price > 0 else raw_price
-                foreign_price = raw_price
+            # Satta'daki net tutar (line_total_without_tax) daima Yerel Para Birimi (TL) cinsindedir.
+            # Faturada kuruş ve kur kaymasını engellemek için yüksek hassasiyetli TL birim fiyatı türetilir:
+            if line_total > 0 and quantity > 0:
+                derived_tl_price = round(line_total / quantity, 6)
+            elif tl_price > 0:
+                derived_tl_price = tl_price
+            elif currency_rate > 0 and currency_id != 0:
+                derived_tl_price = round(raw_price * currency_rate, 6)
             else:
-                unit_price = tl_price if tl_price > 0 else raw_price
+                derived_tl_price = raw_price
+
+            if currency_id != 0:
+                # Dövizli fatura:
+                # Logo'da PRICE = Yerel Para Birimi (TL) birim fiyatı
+                # Logo'da FC_PRICE / EDT_PRICE / PC_PRICE = İşlem Dövizi (EUR/USD vb.) birim fiyatı
+                unit_price = derived_tl_price
+                orig_prod_curr = self._safe_text(product.get("currency_code")).upper()
+                if raw_price > 0 and (orig_prod_curr == line_currency_code or not orig_prod_curr):
+                    foreign_price = raw_price
+                elif currency_rate > 0 and unit_price > 0:
+                    foreign_price = round(unit_price / currency_rate, 6)
+                else:
+                    foreign_price = raw_price
+            else:
+                # TL fatura:
+                unit_price = derived_tl_price
                 foreign_price = 0.0
 
             vat_rate = self._to_float(product.get("applied_vat_rate"))
-            total = self._to_float(product.get("line_total_without_tax"))
             
             product_category_type = str(product.get("category_type")).lower().strip()
             is_service = product_category_type == "service"
@@ -148,7 +168,6 @@ class LogoPayloadBuilder:
                 "unit_price": unit_price,
                 "foreign_currency_price": foreign_price,
                 "vat_rate": vat_rate,
-                "total": total,
                 "currency_code": line_currency_code,
                 "exchange_rate": currency_rate,
                 "currency_id": currency_id,
@@ -187,7 +206,24 @@ class LogoPayloadBuilder:
 
         return ""
 
+    def _resolve_arp_code(self, invoice: Dict[str, Any], currency_code: str) -> str:
+        seller_erp_id = self._safe_text(invoice.get("seller_erp_id"))
+        normalized_currency = self._safe_text(currency_code).upper()
+        if normalized_currency in ("TRY", "TL"):
+            for suffix in [".€", ".$", ".£", ".EUR", ".USD", ".GBP", ".FR", ".CHF"]:
+                if seller_erp_id.upper().endswith(suffix.upper()):
+                    return seller_erp_id[:-len(suffix)].strip()
+        return seller_erp_id
+
     def _resolve_invoice_currency(self, invoice: Dict[str, Any]) -> str:
+        manual_currency = self._safe_text(invoice.get("selected_currency") or invoice.get("manual_currency_code")).upper()
+        if manual_currency:
+            if manual_currency == "TL":
+                return "TRY"
+            if manual_currency in ("FR", "CHF"):
+                return "CHF"
+            return manual_currency
+
         seller_erp_id = self._safe_text(invoice.get("seller_erp_id")).upper()
         if seller_erp_id.endswith(".€"):
             return "EUR"
@@ -195,13 +231,17 @@ class LogoPayloadBuilder:
             return "USD"
         if seller_erp_id.endswith(".£"):
             return "GBP"
+        if seller_erp_id.endswith(".FR") or seller_erp_id.endswith(".CHF"):
+            return "CHF"
 
         products = invoice.get("products") or []
         for product in products:
             if not isinstance(product, dict):
                 continue
             currency_code = self._safe_text(product.get("currency_code"))
-            if currency_code and currency_code.upper() != "TRY":
+            if currency_code and currency_code.upper() in ("FR", "CHF"):
+                return "CHF"
+            if currency_code and currency_code.upper() not in ("TRY", "TL"):
                 return currency_code
         return "TRY"
 
@@ -214,6 +254,7 @@ class LogoPayloadBuilder:
             "EUR": 20,
             "GBP": 17,
             "CHF": 11,
+            "FR": 11,
             "CAD": 19,
             "RUB": 58,
             "JPY": 18
@@ -226,14 +267,24 @@ class LogoPayloadBuilder:
 
     def _resolve_line_exchange_rate(self, invoice: Dict[str, Any], currency_code: str) -> float:
         normalized_currency = self._safe_text(currency_code, default="TRY").upper()
-        if not normalized_currency or normalized_currency == "TRY":
+        if not normalized_currency or normalized_currency in ("TRY", "TL"):
             return 0.0
 
         currency_rates = invoice.get("currency_rates") or {}
         if not isinstance(currency_rates, dict):
             return 0.0
 
-        return self._to_float(currency_rates.get(normalized_currency), default=0.0)
+        candidates = [currency_code, normalized_currency]
+        if normalized_currency in ("FR", "CHF"):
+            candidates.extend(["Fr", "FR", "CHF", "chf"])
+
+        for cand in candidates:
+            if cand in currency_rates and currency_rates[cand] is not None:
+                rate = self._to_float(currency_rates.get(cand), default=0.0)
+                if rate > 0:
+                    return rate
+
+        return 0.0
 
     def _resolve_logo_working_year(self, invoice: Dict[str, Any]) -> str:
         configured_year = self._safe_text(self.logo_settings.get("logo_working_year"))

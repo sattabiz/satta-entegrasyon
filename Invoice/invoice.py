@@ -601,6 +601,139 @@ class InvoiceTransferTab(QWidget):
                 break
             parent = parent.parentWidget()
 
+    def get_available_currencies(self, raw_invoice=None, default_currency=""):
+        base_currencies = ["TRY", "USD", "EUR", "GBP", "CHF"]
+        result = list(base_currencies)
+
+        if default_currency:
+            norm_def = self._safe_text(default_currency)
+            if norm_def.upper() == "TL":
+                norm_def = "TRY"
+            elif norm_def.upper() in ("FR", "CHF"):
+                norm_def = "CHF"
+            found = any(existing.upper() == norm_def.upper() for existing in result)
+            if not found and norm_def:
+                result.append(norm_def)
+
+        if raw_invoice and isinstance(raw_invoice, dict):
+            rates = raw_invoice.get("currency_rates") or {}
+            if isinstance(rates, dict):
+                for c in rates.keys():
+                    c_clean = self._safe_text(c)
+                    if c_clean.upper() in ("FR", "CHF"):
+                        c_clean = "CHF"
+                    found = any(existing.upper() == c_clean.upper() for existing in result)
+                    if not found and c_clean:
+                        result.append(c_clean)
+
+            for p in raw_invoice.get("products") or []:
+                if isinstance(p, dict):
+                    c_clean = self._safe_text(p.get("currency_code"))
+                    if c_clean.upper() in ("FR", "CHF"):
+                        c_clean = "CHF"
+                    found = any(existing.upper() == c_clean.upper() for existing in result)
+                    if not found and c_clean:
+                        result.append(c_clean)
+
+        return result
+
+    def calculate_invoice_display_amounts(self, raw_invoice: dict, target_currency: str):
+        if not raw_invoice or not isinstance(raw_invoice, dict):
+            return "0.00", "0.00", "0.00"
+
+        target_curr = self._safe_text(target_currency, default="TRY").upper()
+        if target_curr == "TL":
+            target_curr = "TRY"
+
+        products = raw_invoice.get("products") or []
+        orig_currency = ""
+        for p in products:
+            if isinstance(p, dict):
+                c = self._safe_text(p.get("currency_code")).upper()
+                if c and c not in ("TRY", "TL"):
+                    orig_currency = c
+                    break
+        if not orig_currency:
+            seller_erp_id = self._safe_text(raw_invoice.get("seller_erp_id")).upper()
+            if seller_erp_id.endswith(".€"):
+                orig_currency = "EUR"
+            elif seller_erp_id.endswith(".$"):
+                orig_currency = "USD"
+            elif seller_erp_id.endswith(".£"):
+                orig_currency = "GBP"
+            elif seller_erp_id.endswith(".FR") or seller_erp_id.endswith(".CHF"):
+                orig_currency = "CHF"
+            else:
+                orig_currency = "TRY"
+        elif orig_currency.upper() in ("FR", "CHF"):
+            orig_currency = "CHF"
+
+        orig_without_vat = self._to_float(raw_invoice.get("price_without_vat"))
+        orig_vat_total = self._to_float(raw_invoice.get("invoice_vat_total"))
+        orig_with_vat = orig_without_vat + orig_vat_total
+        total_tl = self._to_float(raw_invoice.get("total_tl_price"))
+        currency_rates = raw_invoice.get("currency_rates") or {}
+        
+        orig_rate = 0.0
+        if isinstance(currency_rates, dict):
+            candidates = [orig_currency]
+            if orig_currency.upper() in ("FR", "CHF"):
+                candidates.extend(["CHF", "chf", "Fr", "FR"])
+            for cand in candidates:
+                if cand in currency_rates and currency_rates[cand] is not None:
+                    r = self._to_float(currency_rates.get(cand))
+                    if r > 0:
+                        orig_rate = r
+                        break
+
+        tl_without_tax = sum(self._to_float(p.get("line_total_without_tax")) for p in products if isinstance(p, dict))
+        if tl_without_tax <= 0:
+            if orig_rate > 0 and orig_without_vat > 0:
+                tl_without_tax = orig_without_vat * orig_rate
+            else:
+                tl_without_tax = orig_without_vat
+
+        if total_tl <= 0:
+            if orig_rate > 0 and orig_with_vat > 0:
+                total_tl = orig_with_vat * orig_rate
+            else:
+                total_tl = orig_with_vat
+
+        if target_curr in ("TRY", "TL"):
+            disp_without_vat = tl_without_tax
+            disp_with_vat = total_tl
+            disp_total = total_tl
+        elif target_curr == orig_currency or (target_curr in ("FR", "CHF") and orig_currency.upper() in ("FR", "CHF")):
+            disp_without_vat = orig_without_vat
+            disp_with_vat = orig_with_vat
+            disp_total = total_tl
+        else:
+            target_rate = 0.0
+            if isinstance(currency_rates, dict):
+                candidates = [target_curr]
+                if target_curr in ("FR", "CHF"):
+                    candidates.extend(["CHF", "chf", "Fr", "FR"])
+                for cand in candidates:
+                    if cand in currency_rates and currency_rates[cand] is not None:
+                        r = self._to_float(currency_rates.get(cand))
+                        if r > 0:
+                            target_rate = r
+                            break
+
+            if target_rate > 0:
+                disp_without_vat = tl_without_tax / target_rate
+                disp_with_vat = total_tl / target_rate
+            else:
+                disp_without_vat = orig_without_vat
+                disp_with_vat = orig_with_vat
+            disp_total = total_tl
+
+        return (
+            self._format_money(disp_without_vat),
+            self._format_money(disp_with_vat),
+            self._format_money(disp_total),
+        )
+
     def populate_invoice_table(self, rows):
         self.setup_invoice_table_columns()
         logo_settings = self.load_logo_settings()
@@ -620,7 +753,7 @@ class InvoiceTransferTab(QWidget):
 
             invoice_no = str(row_data[0]).strip() if row_data else ""
             invoice_id = self.invoice_id_map.get(invoice_no)
-            raw_inv = self.invoice_raw_map.get(invoice_id) if invoice_id is not None else None
+            raw_invoice = self.invoice_raw_map.get(invoice_id) if invoice_id is not None else None
 
             # Col 1: Fatura No
             fatura_no_item = QTableWidgetItem(invoice_no)
@@ -628,12 +761,59 @@ class InvoiceTransferTab(QWidget):
             fatura_no_item.setFlags(fatura_no_item.flags() & ~Qt.ItemIsEditable)
             self.invoice_table.setItem(row_index, 1, fatura_no_item)
 
+            raw_currency = str(row_data[4]).strip() if len(row_data) > 4 else ""
+            if raw_currency.upper() == "TL":
+                raw_currency = "TRY"
+            elif raw_currency.upper() in ("FR", "CHF"):
+                raw_currency = "CHF"
+
+            if raw_invoice and "selected_currency" in raw_invoice:
+                selected_curr = str(raw_invoice["selected_currency"]).strip()
+                if selected_curr.upper() in ("FR", "CHF"):
+                    selected_curr = "CHF"
+            else:
+                selected_curr = raw_currency if raw_currency else "TRY"
+                if raw_invoice:
+                    raw_invoice["selected_currency"] = selected_curr
+
+            if raw_invoice:
+                without_vat_str, with_vat_str, total_str = self.calculate_invoice_display_amounts(raw_invoice, selected_curr)
+            else:
+                without_vat_str = str(row_data[5]) if len(row_data) > 5 else "0.00"
+                with_vat_str = str(row_data[6]) if len(row_data) > 6 else "0.00"
+                total_str = str(row_data[7]) if len(row_data) > 7 else "0.00"
+
+            currency_combo = QComboBox()
+            currency_combo.setMinimumHeight(26)
+            currency_combo.setStyleSheet("QComboBox { font-weight: 500; padding-left: 4px; }")
+            available_currencies = self.get_available_currencies(raw_invoice, selected_curr)
+            for curr in available_currencies:
+                currency_combo.addItem(curr)
+
+            currency_combo.blockSignals(True)
+            idx = -1
+            for i in range(currency_combo.count()):
+                if currency_combo.itemText(i).upper() == selected_curr.upper():
+                    idx = i
+                    break
+            if idx >= 0:
+                currency_combo.setCurrentIndex(idx)
+            else:
+                currency_combo.addItem(selected_curr)
+                currency_combo.setCurrentIndex(currency_combo.count() - 1)
+            currency_combo.blockSignals(False)
+
+            currency_combo.currentIndexChanged.connect(
+                lambda idx, inv_id=invoice_id, combo=currency_combo:
+                self.handle_invoice_currency_changed(inv_id, combo)
+            )
+
             if use_connect:
-                is_e_inv = bool(raw_inv.get("is_e_invoice")) if isinstance(raw_inv, dict) else False
-                status_text = raw_inv.get("e_invoice_status_text", "") if isinstance(raw_inv, dict) else ""
-                reason = raw_inv.get("e_invoice_match_reason", "") if isinstance(raw_inv, dict) else ""
-                ettn = raw_inv.get("ettn_guid", "") if isinstance(raw_inv, dict) else ""
-                gib_no = raw_inv.get("gib_invoice_no", "") if isinstance(raw_inv, dict) else ""
+                is_e_inv = bool(raw_invoice.get("is_e_invoice")) if isinstance(raw_invoice, dict) else False
+                status_text = raw_invoice.get("e_invoice_status_text", "") if isinstance(raw_invoice, dict) else ""
+                reason = raw_invoice.get("e_invoice_match_reason", "") if isinstance(raw_invoice, dict) else ""
+                ettn = raw_invoice.get("ettn_guid", "") if isinstance(raw_invoice, dict) else ""
+                gib_no = raw_invoice.get("gib_invoice_no", "") if isinstance(raw_invoice, dict) else ""
 
                 if not status_text:
                     if is_e_inv:
@@ -663,11 +843,33 @@ class InvoiceTransferTab(QWidget):
                 # Col 2: E-Fatura Durumu (Fatura Numarasının hemen yanında)
                 self.invoice_table.setItem(row_index, 2, status_item)
 
-                # Col 3 to 9: Cari, Fatura Tarihi, Ödeme Tarihi, Döviz Cinsi, KDV Hariç, KDV Dahil, Toplam
-                for col_offset, value in enumerate(row_data[1:], start=3):
-                    item = QTableWidgetItem(value)
+                # Col 3 to 5: Cari, Fatura Tarihi, Ödeme Tarihi
+                for col_offset, val_index in [(3, 1), (4, 2), (5, 3)]:
+                    val = row_data[val_index] if len(row_data) > val_index else ""
+                    item = QTableWidgetItem(str(val))
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     self.invoice_table.setItem(row_index, col_offset, item)
+
+                # Col 6: Döviz Cinsi (QComboBox)
+                dummy_item = QTableWidgetItem(selected_curr)
+                dummy_item.setFlags(dummy_item.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 6, dummy_item)
+                self.invoice_table.setCellWidget(row_index, 6, currency_combo)
+
+                # Col 7: KDV Hariç Tutar
+                item7 = QTableWidgetItem(without_vat_str)
+                item7.setFlags(item7.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 7, item7)
+
+                # Col 8: KDV Dahil Tutar
+                item8 = QTableWidgetItem(with_vat_str)
+                item8.setFlags(item8.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 8, item8)
+
+                # Col 9: Toplam Tutar
+                item9 = QTableWidgetItem(total_str)
+                item9.setFlags(item9.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 9, item9)
 
                 # Col 10: Invoice ID
                 invoice_id_text = str(invoice_id) if invoice_id is not None else "-"
@@ -675,17 +877,107 @@ class InvoiceTransferTab(QWidget):
                 invoice_id_item.setFlags(invoice_id_item.flags() & ~Qt.ItemIsEditable)
                 self.invoice_table.setItem(row_index, 10, invoice_id_item)
             else:
-                # Col 2 to 8: Cari, Fatura Tarihi, Ödeme Tarihi, Döviz Cinsi, KDV Hariç, KDV Dahil, Toplam
-                for col_offset, value in enumerate(row_data[1:], start=2):
-                    item = QTableWidgetItem(value)
+                # Col 2 to 4: Cari, Fatura Tarihi, Ödeme Tarihi
+                for col_offset, val_index in [(2, 1), (3, 2), (4, 3)]:
+                    val = row_data[val_index] if len(row_data) > val_index else ""
+                    item = QTableWidgetItem(str(val))
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     self.invoice_table.setItem(row_index, col_offset, item)
+
+                # Col 5: Döviz Cinsi (QComboBox)
+                dummy_item = QTableWidgetItem(selected_curr)
+                dummy_item.setFlags(dummy_item.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 5, dummy_item)
+                self.invoice_table.setCellWidget(row_index, 5, currency_combo)
+
+                # Col 6: KDV Hariç Tutar
+                item6 = QTableWidgetItem(without_vat_str)
+                item6.setFlags(item6.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 6, item6)
+
+                # Col 7: KDV Dahil Tutar
+                item7 = QTableWidgetItem(with_vat_str)
+                item7.setFlags(item7.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 7, item7)
+
+                # Col 8: Toplam Tutar
+                item8 = QTableWidgetItem(total_str)
+                item8.setFlags(item8.flags() & ~Qt.ItemIsEditable)
+                self.invoice_table.setItem(row_index, 8, item8)
 
                 # Col 9: Invoice ID
                 invoice_id_text = str(invoice_id) if invoice_id is not None else "-"
                 invoice_id_item = QTableWidgetItem(invoice_id_text)
                 invoice_id_item.setFlags(invoice_id_item.flags() & ~Qt.ItemIsEditable)
                 self.invoice_table.setItem(row_index, 9, invoice_id_item)
+
+    def handle_invoice_currency_changed(self, invoice_id, combo):
+        if invoice_id is None or not combo:
+            return
+
+        new_currency = combo.currentText().strip()
+        if not new_currency:
+            return
+        if new_currency.upper() in ("FR", "CHF"):
+            new_currency = "CHF"
+
+        raw_invoice = self.invoice_raw_map.get(invoice_id)
+        if not raw_invoice or not isinstance(raw_invoice, dict):
+            return
+
+        raw_invoice["selected_currency"] = new_currency
+
+        target_row = -1
+        target_col = -1
+        for row in range(self.invoice_table.rowCount()):
+            for col in (5, 6):
+                if self.invoice_table.cellWidget(row, col) == combo:
+                    target_row = row
+                    target_col = col
+                    break
+            if target_row != -1:
+                break
+
+        without_vat_str, with_vat_str, total_str = self.calculate_invoice_display_amounts(raw_invoice, new_currency)
+
+        if target_row != -1 and target_col != -1:
+            dummy_item = self.invoice_table.item(target_row, target_col)
+            if dummy_item:
+                dummy_item.setText(new_currency)
+
+            item_without_vat = self.invoice_table.item(target_row, target_col + 1)
+            if item_without_vat:
+                item_without_vat.setText(without_vat_str)
+
+            item_with_vat = self.invoice_table.item(target_row, target_col + 2)
+            if item_with_vat:
+                item_with_vat.setText(with_vat_str)
+
+            item_total = self.invoice_table.item(target_row, target_col + 3)
+            if item_total:
+                item_total.setText(total_str)
+
+        invoice_no = self._safe_text(raw_invoice.get("invoice_no"))
+        updated_all_invoices = []
+        for row_data in self.all_invoices:
+            normalized_row = list(self.normalize_table_row(row_data))
+            curr_no = str(normalized_row[0]).strip()
+            curr_id = self.invoice_id_map.get(curr_no)
+
+            if (curr_id == invoice_id) or (invoice_no and curr_no == invoice_no):
+                normalized_row[4] = new_currency
+                normalized_row[5] = without_vat_str
+                normalized_row[6] = with_vat_str
+                normalized_row[7] = total_str
+                updated_all_invoices.append(tuple(normalized_row))
+            else:
+                updated_all_invoices.append(tuple(normalized_row))
+
+        self.all_invoices = updated_all_invoices
+
+        current_invoice_row = self.invoice_table.currentRow()
+        if current_invoice_row == target_row and invoice_no:
+            self.populate_detail_table(invoice_no)
 
     def normalize_table_row(self, row_data):
         normalized_row = [str(value) if value is not None else "" for value in row_data[:8]]
@@ -752,13 +1044,21 @@ class InvoiceTransferTab(QWidget):
         use_connect = bool(logo_settings.get("use_logo_connect", False))
 
         if use_connect:
-            if item.column() not in (3, 4, 5, 6, 7, 8, 9):
+            if item.column() not in (3, 4, 5, 7, 8, 9):
                 return
             data_index = item.column() - 2
         else:
-            if item.column() not in (2, 3, 4, 5, 6, 7, 8):
+            if item.column() not in (2, 3, 4, 6, 7, 8):
                 return
             data_index = item.column() - 1
+
+        invoice_no_item = self.invoice_table.item(item.row(), 1)
+        invoice_id = invoice_no_item.data(Qt.UserRole) if invoice_no_item is not None else None
+        if invoice_id is None:
+            self.update_selected_count()
+            return
+
+        invoice_no = invoice_no_item.text().strip() if invoice_no_item else ""
 
         updated_rows = []
         for row_data in self.all_invoices:
@@ -824,7 +1124,45 @@ class InvoiceTransferTab(QWidget):
 
                 unit = self._safe_text(product.get("unit"), "-")
                 shipped_amount = self._format_quantity(product.get("shipped_amount"))
-                price = self._format_money(product.get("price"))
+
+                raw_price = self._to_float(product.get("price"))
+                tl_price = self._to_float(product.get("price_in_tl"))
+                line_total = self._to_float(product.get("line_total_without_tax"))
+                qty = self._to_float(product.get("shipped_amount"))
+
+                selected_curr = self._safe_text(raw_invoice.get("selected_currency")).upper()
+                if selected_curr in ("TRY", "TL"):
+                    if line_total > 0 and qty > 0:
+                        disp_price = line_total / qty
+                    elif tl_price > 0:
+                        disp_price = tl_price
+                    else:
+                        disp_price = raw_price
+                elif selected_curr:
+                    rates = raw_invoice.get("currency_rates") or {}
+                    candidates = [selected_curr]
+                    if selected_curr in ("FR", "CHF"):
+                        candidates.extend(["CHF", "chf", "Fr", "FR"])
+                    target_rate = 0.0
+                    if isinstance(rates, dict):
+                        for cand in candidates:
+                            if cand in rates and rates[cand] is not None:
+                                r = self._to_float(rates.get(cand))
+                                if r > 0:
+                                    target_rate = r
+                                    break
+
+                    orig_prod_curr = self._safe_text(product.get("currency_code")).upper()
+                    if orig_prod_curr == selected_curr or (orig_prod_curr in ("FR", "CHF") and selected_curr in ("FR", "CHF")) or not orig_prod_curr:
+                        disp_price = raw_price
+                    elif target_rate > 0 and line_total > 0 and qty > 0:
+                        disp_price = (line_total / qty) / target_rate
+                    else:
+                        disp_price = raw_price
+                else:
+                    disp_price = raw_price
+
+                price = self._format_money(disp_price)
                 cost_center_name = self._extract_cost_center_name(product, raw_invoice)
 
                 row_index = self.detail_table.rowCount()
